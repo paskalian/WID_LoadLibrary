@@ -129,7 +129,7 @@ HMODULE __fastcall LoadLibraryExA(LPCSTR lpLibFileName, HANDLE hFile, DWORD dwFl
   return ReturnModule;
 }
 ```
-### LoadLibraryExW (Simplified & Explained)
+### LoadLibraryExA (Simplified & Explained)
 ```cpp
 HMODULE __fastcall LoadLibraryExA(LPCSTR lpLibFileName, HANDLE hFile, DWORD dwFlags)
 {
