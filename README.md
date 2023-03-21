@@ -153,6 +153,7 @@ That's why I said everything ends up in LoadLibraryExW, even if you call LoadLib
 <hr>
 
 # Level 2
+Even though still most of the stuff is documented, things get a little trickier.
 
 ## LoadLibraryExW
 ### LoadLibraryExW (IDA Pseuodocode)
