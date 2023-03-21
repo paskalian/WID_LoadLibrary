@@ -29,7 +29,7 @@ There is 4 main LoadLibrary functions you can use
 Even if they look like seperate, they all end up in **LoadLibraryExW** finally, wanna learn how? Keep reading.
 
 # Level 1
-All the functions I've said are declared in KERNEL32.DLL, but their actual definitions are inside KERNELBASE.dll, because these modules are well documented and have their own PDB it's not that hard to understand them.
+All the functions I've said are declared in KERNEL32.DLL, but their actual definitions are inside KERNELBASE.dll, because both these modules are well documented and have their own PDB, it wasn't that hard to understand them.
 
 ### LoadLibraryA (IDA Pseudocode)
 ```cpp
