@@ -29,3 +29,36 @@ There is 4 main LoadLibrary functions you can use
 Even if they look like seperate, they all end up in **LoadLibraryExW** finally, wanna learn how? Keep reading.
 
 # Level 1
+All the functions I've said are declared in KERNEL32.DLL, but their actual definitions are inside KERNELBASE.dll, because these guys have a PDB and also well documented it's not that hard to understand them.
+
+### LoadLibraryA (IDA Pseudocode)
+```cpp
+HMODULE __fastcall LoadLibraryA(LPCSTR lpLibFileName)
+{
+  PCHAR Heap; // rax
+  PCHAR Heap_2; // rbx
+  HMODULE ReturnModule; // rsi
+
+  if ( !lpLibFileName )
+    return LoadLibraryExA(lpLibFileName, 0i64, 0);
+  if ( _stricmp(lpLibFileName, "twain_32.dll") )
+    return LoadLibraryExA(lpLibFileName, 0i64, 0);
+  // 260 = MAX_PATH
+  Heap = (PCHAR)RtlAllocateHeap(NtCurrentPeb()->ProcessHeap, (unsigned int)KernelBaseGlobalData, 260i64);
+  Heap_2 = Heap;
+  if ( !Heap )
+    return LoadLibraryExA(lpLibFileName, 0i64, 0);
+  if ( GetWindowsDirectoryA(Heap, 0xF7u) - 1 > 0xF5
+    || (strncat_s(Heap_2, 260ui64, "\\twain_32.dll", 0xDui64), (ReturnModule = LoadLibraryA(Heap_2)) == 0i64) )
+  {
+    RtlFreeHeap(NtCurrentPeb()->ProcessHeap, 0i64, Heap_2);
+    return LoadLibraryExA(lpLibFileName, 0i64, 0);
+  }
+  RtlFreeHeap(NtCurrentPeb()->ProcessHeap, 0i64, Heap_2);
+  return ReturnModule;
+}
+```
+### LoadLibraryA (Simplified)
+```cpp
+// TO DO, PUT THE SIMPLIFIED AND EXPLAINED CODE IN HERE.
+```
