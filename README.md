@@ -31,6 +31,9 @@ Even if they look like seperate, they all end up in **LoadLibraryExW** finally, 
 # Level 1
 All the functions I've said above are declared in KERNEL32.DLL, but their actual definitions are inside KERNELBASE.dll, because both these modules are well documented and have their own PDB, it wasn't that hard to understand them.
 
+<hr>
+
+## LoadLibraryA
 ### LoadLibraryA (IDA Pseudocode)
 ```cpp
 HMODULE __fastcall LoadLibraryA(LPCSTR lpLibFileName)
@@ -58,7 +61,91 @@ HMODULE __fastcall LoadLibraryA(LPCSTR lpLibFileName)
   return ReturnModule;
 }
 ```
-### LoadLibraryA (Simplified)
+### LoadLibraryA (Simplified & Explained)
 ```cpp
-// TO DO, PUT THE SIMPLIFIED AND EXPLAINED CODE IN HERE.
+HMODULE __fastcall LoadLibraryA(LPCSTR lpLibFileName)
+{
+    // If no path was given.
+    if (!lpLibFileName)
+        return LoadLibraryExA(lpLibFileName, 0, 0);
+    // If path isn't 'twain_32.dll'
+    // This is where our LoadLibrary calls mostly end up.
+    if (_stricmp(lpLibFileName, "twain_32.dll"))
+        return LoadLibraryExA(lpLibFileName, 0, 0);
+
+    // If path is 'twain_32.dll'
+    // Windows probably uses this to make itself a shortcut, while we are using it the code won't reach here.
+    PCHAR Heap = (PCHAR)RtlAllocateHeap(NtCurrentPeb()->ProcessHeap, KernelBaseGlobalData, MAX_PATH);
+    if (!Heap)
+        return LoadLibraryExA(lpLibFileName, 0, 0);
+
+    HMODULE ReturnModule;
+    // Heap receives the Windows path (def: C:\Windows)
+   
+    // The BufferSize check made against GetWindowsDirectoryA is to see if it actually received. If it's bigger than BufferSize 
+    // then GetWindowsDirectoryA returned the size needed (in summary it fails)
+    
+    // If this check doesn't fail '\twain_32.dll' is appended to the Windows path (def: C:\Windows\twain_32.dll)
+    // Then this final module is loaded into the program.
+    // If it can't load, it tries to load it directly and returns from there.
+    if (GetWindowsDirectoryA(Heap, HeapSize) - 1 > BufferSize ||
+       (strncat_s(Heap, MAX_PATH, "\\twain_32.dll", strlen("\\twain_32.dll")), (ReturnModule = LoadLibraryA(Heap)) == 0))
+    {
+        RtlFreeHeap(NtCurrentPeb()->ProcessHeap, 0, Heap);
+        return LoadLibraryExA(lpLibFileName, 0, 0);
+    }
+    RtlFreeHeap(NtCurrentPeb()->ProcessHeap, 0, Heap);
+    return ReturnModule;
+}
 ```
+
+So as you can also see, other than doing some checks, it ends up in LoadLibraryExA.
+<hr>
+
+## LoadLibraryW
+### LoadLibraryW (IDA Pseudocode)
+```cpp
+HMODULE __fastcall LoadLibraryW(LPCWSTR lpLibFileName)
+{
+  return LoadLibraryExW(lpLibFileName, 0i64, 0);
+}
+```
+
+Self explanatory.
+<hr>
+
+## LoadLibraryExA
+### LoadLibraryExA (IDA Pseudocode)
+```cpp
+HMODULE __fastcall LoadLibraryExA(LPCSTR lpLibFileName, HANDLE hFile, DWORD dwFlags)
+{
+  HMODULE ReturnModule; // rbx
+  UNICODE_STRING UnicodeString; // [rsp+20h] [rbp-18h] BYREF
+
+  if ( !(unsigned int)Basep8BitStringToDynamicUnicodeString(&UnicodeString, lpLibFileName) )
+    return 0i64;
+  ReturnModule = LoadLibraryExW(UnicodeString.Buffer, hFile, dwFlags);
+  RtlFreeUnicodeString(&UnicodeString);
+  return ReturnModule;
+}
+```
+### LoadLibraryExW (Simplified & Explained)
+```cpp
+HMODULE __fastcall LoadLibraryExA(LPCSTR lpLibFileName, HANDLE hFile, DWORD dwFlags)
+{
+    // As we are assuming LoadLibraryA was called directly, there won't be no hFile nor dwFlags.
+    // If you call this function directly you can of course give args.
+
+    HMODULE ReturnModule;
+    UNICODE_STRING UnicodeString;
+
+    // Converts ANSI lpLibFileName into UNICODE, if it can't, returns 0.
+    if (!(unsigned int)Basep8BitStringToDynamicUnicodeString(&UnicodeString, lpLibFileName))
+        return 0;
+    ReturnModule = LoadLibraryExW(UnicodeString.Buffer, hFile, dwFlags);
+    RtlFreeUnicodeString(&UnicodeString);
+    return ReturnModule;
+}
+```
+
+That's why I said everything ends up in LoadLibraryExW, even if you call LoadLibraryExA, it transforms your ANSI path to UNICODE.
