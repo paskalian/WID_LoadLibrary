@@ -140,7 +140,7 @@ HMODULE __fastcall LoadLibraryExA(LPCSTR lpLibFileName, HANDLE hFile, DWORD dwFl
     UNICODE_STRING UnicodeString;
 
     // Converts ANSI lpLibFileName into UNICODE, if it can't, returns 0.
-    if (!(unsigned int)Basep8BitStringToDynamicUnicodeString(&UnicodeString, lpLibFileName))
+    if (Basep8BitStringToDynamicUnicodeString(&UnicodeString, lpLibFileName) == FALSE)
         return 0;
     ReturnModule = LoadLibraryExW(UnicodeString.Buffer, hFile, dwFlags);
     RtlFreeUnicodeString(&UnicodeString);
