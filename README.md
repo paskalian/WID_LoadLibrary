@@ -328,7 +328,7 @@ HMODULE __stdcall LoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFl
 
     BaseOfLoadedDll = 0;
 
-    // If the dll is not getting loaded as a datafile.
+    // If the dll is not getting loaded as a datafile (loaded normally).
     if ((dwFlags & LOADLIBRARY_ISDATAFILE) == 0)
     {
         // Converts the actual flags into it's own flag format. Most flags are discarded (only used if loaded as datafile).
