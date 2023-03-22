@@ -273,5 +273,108 @@ FAIL:
 ```
 ### LoadLibraryExW (Simplified & Explained)
 ```cpp
-// TO DO.
+HMODULE __stdcall LoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags)
+{
+    NTSTATUS Status;
+
+    DWORD ConvertedFlags;
+    HMODULE BaseOfLoadedDll;
+
+    DWORD DatafileFlags = dwFlags & LOADLIBRARY_ASDATAFILE;
+    // If no DllName was given OR hFile was given (msdn states that hFile must be 0) OR dwFlags is set to an unknown value OR *both* the Datafile flags are set (they cannot be used together).
+    if (!lpLibFileName || hFile || ((dwFlags & 0xFFFF0000) != 0) || (DatafileFlags == LOADLIBRARY_ASDATAFILE))
+    {
+        BaseSetLastNTError(STATUS_INVALID_PARAMETER);
+        return 0;
+    }
+
+    UNICODE_STRING DllName;
+    Status = RtlInitUnicodeStringEx(&DllName, lpLibFileName);
+    if (NT_SUCCESS(Status) == FALSE)
+    {
+        BaseSetLastNTError(Status);
+        return 0;
+    }
+
+    USHORT DllNameLen = DllName.Length;
+    if (!DllName.Length)
+    {
+        BaseSetLastNTError(STATUS_INVALID_PARAMETER);
+        return 0;
+    }
+
+    // If the DllName given had empty (space) chars as their last chars, this do-while loop excludes them and sets the excluded length.
+    do
+    {
+        DWORD WchAmount = DllNameLen / 2;
+        if (DllName.Buffer[WchAmount - 1] != ' ' /* 0x20 is space char */)
+            break;
+
+        DllNameLen -= 2;
+        DllName.Length = DllNameLen;
+    } while (DllNameLen != 2);
+
+    // In case the above do-while loop misbehaves.
+    if (DllNameLen == 0)
+    {
+        BaseSetLastNTError(STATUS_INVALID_PARAMETER);
+        return 0;
+    }
+
+    BaseOfLoadedDll = 0;
+
+    // If the dll is not getting loaded as a datafile.
+    if ((dwFlags & LOADLIBRARY_ISDATAFILE) == 0)
+    {
+        // Converts the actual flags into it's own flag format. Most flags are discarded (only used if loaded as datafile).
+        // Only flags that can go through are DONT_RESOLVE_DLL_REFERENCES, LOAD_PACKAGED_LIBRARY, LOAD_LIBRARY_REQUIRE_SIGNED_TARGET and LOAD_LIBRARY_OS_INTEGRITY_CONTINUITY
+        ConvertedFlags = 0;
+        if ((dwFlags & DONT_RESOLVE_DLL_REFERENCES) != 0)
+            ConvertedFlags |= 0x2;
+        if ((dwFlags & LOAD_PACKAGED_LIBRARY) != 0)
+            ConvertedFlags |= 0x4;
+        if ((dwFlags & LOAD_LIBRARY_REQUIRE_SIGNED_TARGET) != 0)
+            ConvertedFlags |= 0x800000;
+        if ((dwFlags & LOAD_LIBRARY_OS_INTEGRITY_CONTINUITY) != 0)
+            ConvertedFlags |= 0x80000000;
+
+        // Evaluates dwFlags to get meaningful flags, includes DONT_RESOLVE_DLL_REFERENCES finally.
+        // But it doesn't matter because the first param LdrLoadDll takes actually a (PWCHAR PathToFile), so I have no idea why that's done.
+        Status = LdrLoadDll((PWCHAR)((dwFlags & LOADLIBRARY_7F08) | 1), ConvertedFlags, &DllName, &BaseOfLoadedDll);
+        if (NT_SUCCESS(Status))
+            return BaseOfLoadedDll;
+
+        BaseSetLastNTError(Status);
+        return 0;
+    }
+
+    PWSTR Path;
+    PWSTR Unknown;
+    // Gets the Dll path.
+    Status = LdrGetDllPath(DllName.Buffer, (dwFlags & LOADLIBRARY_7F08), &Path, &Unknown);
+    if (NT_SUCCESS(Status) == FALSE)
+    {
+        BaseSetLastNTError(Status);
+        return 0;
+    }
+    
+    // First step into loading a module as datafile.
+    Status = BasepLoadLibraryAsDataFileInternal(&DllName, Path, Unknown, dwFlags, &BaseOfLoadedDll);
+    // If the Status is only success (excludes warnings) AND if the module is image resource, loads again. I don't know why.
+    if (NT_SUCCESS(Status + 0x80000000) && Status != STATUS_NO_SUCH_FILE && (dwFlags & LOAD_LIBRARY_AS_IMAGE_RESOURCE) != 0)
+    {
+        if (DatafileFlags)
+            Status = BasepLoadLibraryAsDataFileInternal(&DllName, Path, Unknown, DatafileFlags, &BaseOfLoadedDll);
+    }
+
+    RtlReleasePath(Path);
+    BaseSetLastNTError(Status);
+    return 0;
+}
 ```
+
+So from there on, we can see there is 2 pathways
+1- LdrLoadDll
+2- BasepLoadLibraryAsDataFileInternal
+
+I will be focused on LdrLoadDll and so on, but will check BasepLoadLibraryAsDataFileInternal too.
