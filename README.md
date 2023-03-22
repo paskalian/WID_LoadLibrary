@@ -477,5 +477,123 @@ NTSTATUS __fastcall LdrLoadDll(PWSTR SearchPath, PULONG Flags, PUNICODE_STRING D
 ```
 ### LdrLoadDll (Simplified & Explained)
 ```cpp
-// TO DO
+#define CONVERTED_DONT_RESOLVE_DLL_REFERENCES 0x2
+// LOAD_PACKAGED_LIBRARY doesn't get converted so I am using it directly.
+#define CONVERTED_LOAD_LIBRARY_REQUIRE_SIGNED_TARGET 0x800000
+#define CONVERTED_LOAD_LIBRARY_OS_INTEGRITY_CONTINUITY 0x80000000
+
+#define STATUS_INVALID_THREAD 0xC000071C
+#define STATUS_NO_APPLICATION_PACKAGE 0xC00001AA
+
+NTSTATUS __fastcall LdrLoadDll(PWSTR DllPath, PULONG pFlags, PUNICODE_STRING DllName, PVOID* BaseAddress)
+{
+    NTSTATUS Status;
+
+    // By default I didn't know what to do with this, never initialized but used in an if statement.
+    // I assumed it was zero initialized.
+    // But after setting the DllPathInited array length to 16, it got destroyed.
+    // bool FalseBool = 0; 
+
+    ULONG FlagUsed = 0;
+    if (pFlags)
+    {
+        /*
+        (from LoadLibraryExW) 
+        
+        DWORD ConvertedFlags = 0;
+        if ((dwFlags & DONT_RESOLVE_DLL_REFERENCES) != 0)
+            ConvertedFlags |= 0x2;
+        if ((dwFlags & LOAD_PACKAGED_LIBRARY) != 0)
+            ConvertedFlags |= 0x4;
+        if ((dwFlags & LOAD_LIBRARY_REQUIRE_SIGNED_TARGET) != 0)
+            ConvertedFlags |= 0x800000;
+        if ((dwFlags & LOAD_LIBRARY_OS_INTEGRITY_CONTINUITY) != 0)
+            ConvertedFlags |= 0x80000000;
+        */
+
+        // Only flags that could go through *LoadLibraryExW* were;
+        // CONVERTED_DONT_RESOLVE_DLL_REFERENCES (0x2)
+        // LOAD_PACKAGED_LIBRARY (0x4)
+        // CONVERTED_DONT_RESOLVE_DLL_REFERENCES (0x800000)
+        // CONVERTED_LOAD_LIBRARY_REQUIRE_SIGNED_TARGET (0x80000000)
+        // So I am assuming the rest of the flags are 0.
+
+        ULONG ActualFlags = *pFlags;
+        // If LOAD_PACKAGED_LIBRARY (0x4) flag is set (1) FlagUsed becomes CONVERTED_DONT_RESOLVE_DLL_REFERENCES (0x2), if not set (0) FlagUsed becomes 0.
+        FlagUsed = CONVERTED_DONT_RESOLVE_DLL_REFERENCES * (ActualFlags & LOAD_PACKAGED_LIBRARY);
+
+        // (MSDN about DONT_RESOLVE_DLL_REFERENCES) Note  Do not use this value; it is provided only for backward compatibility.
+        // If you are planning to access only data or resources in the DLL, use LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE
+        // or LOAD_LIBRARY_AS_IMAGE_RESOURCE or both. Otherwise, load the library as a DLL or executable module using the LoadLibrary function.
+        FlagUsed |= ((ActualFlags & CONVERTED_DONT_RESOLVE_DLL_REFERENCES)          ? LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE : NULL);
+        FlagUsed |= ((ActualFlags & CONVERTED_LOAD_LIBRARY_REQUIRE_SIGNED_TARGET)   ? LOAD_LIBRARY_REQUIRE_SIGNED_TARGET : NULL);
+         
+        // Ignored because ActualFlags can't have 0x1000 (if called from LoadLibraryExW), this value is used probably in calls from different functions.
+        // FlagUsed |= ((ActualFlags & 0x1000) ? 0x100 : 0x0);
+        // Ignored because ActualFlags can't be negative (if called from LoadLibraryExW), this value is used probably in calls from different functions.
+        // FlagUsed |= ((ActualFlags < 0) ? 0x400000 : 0x0);
+
+        // To sum up, in case we are called from LoadLibraryExW, the most flags we can have are;
+        // CONVERTED_DONT_RESOLVE_DLL_REFERENCES (0x2) | LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE (0x40) | LOAD_LIBRARY_REQUIRE_SIGNED_TARGET (0x80)
+    }
+
+    // Logs status.
+    LdrpLogInternal("minkernel\\ntdll\\ldrapi.c", 580, "LdrLoadDll", 3u, "DLL name: %wZ\n", DllName);
+
+    // Ignoring LdrpPolicyBits for now.
+    if ((LdrpPolicyBits & 4) == 0 && ((unsigned __int16)DllPath & 0x401) == 0x401)
+        return STATUS_INVALID_PARAMETER;
+
+    // In here it will go in by the first condition, because 8 couldn't be set by LoadLibraryExW.
+    if ((FlagUsed & 8) == 0 || (LdrpPolicyBits & 8) != 0)
+    {
+        // If the current thread is a Worker Thread it fails.
+        if ((((sPTEB)(NtCurrentTeb()))->SameTebFlags & LoaderWorker))
+        {
+            Status = STATUS_INVALID_THREAD;
+        }
+        else
+        {
+            // By default it takes up 0x78 bytes of space
+            // PUNICODE_STRING DllPathInited[15];
+
+            // Checked inside LdrpInitializeDllPath, zero initializes the first 0x80 bytes of the 3rd argument given (DllPathInited in this case)
+            // So this may cause undefined behaviour, decided to change the size to 16.
+
+            // Now it takes up exactly 0x80 bytes of space and shouldn't be causing any problems.
+            // Also changing it to 16 destroyed FalseBool so win win I guess.
+            PUNICODE_STRING DllPathInited[16];
+            LdrpInitializeDllPath(DllName->Buffer, DllPath, DllPathInited);
+
+            UINT_PTR DllBaseAddress;
+            Status = LdrpLoadDll(DllName, DllPathInited, FlagUsed, &DllBaseAddress);
+            // (BY DEFAULT FalseBool WAS USED HERE) Even though I called it FalseBool, I am uncertain about the behaviour.
+            // if (FalseBool)
+
+            // Changing it to 16 got me into this guy, and I changed it again to be more understandable.
+            // if (BYTE4(DllPathInited[15]))
+            // In IDA's docs BYTEn ANDs the argument with n+1, [ BYTEn(arg) = (arg & n+1) ]
+
+            // IN BOTH CASES I HAVE NO IDEA WHAT'S GOING ON WITH THIS IF, I MUST DEBUG THIS FUNCTION FOR CLARITY.
+            if (((UINT_PTR)DllPathInited[15] & 5))
+                RtlReleasePath(DllPathInited[0]);
+            if (NT_SUCCESS(Status))
+            {
+                // Changes the actual return value and dereferences the module.
+                *BaseAddress = *(PVOID*)(DllBaseAddress + 0x30);
+                LdrpDereferenceModule((PVOID)DllBaseAddress);
+            }
+        }
+    }
+    else
+    {
+        LdrpLogInternal("minkernel\\ntdll\\ldrapi.c", 601, "LdrLoadDll", 0, "Nonpackaged process attempted to load a packaged DLL.\n");
+        Status = STATUS_NO_APPLICATION_PACKAGE;
+    }
+    LdrpLogInternal("minkernel\\ntdll\\ldrapi.c", 633, "LdrLoadDll", 4u, "Status: 0x%08lx\n", Status);
+    return Status;
+}
 ```
+
+We are still not in the main dll loading part, as you can also see there's still a deeper function
+- LdrpLoadDll
