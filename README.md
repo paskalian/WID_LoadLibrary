@@ -12,6 +12,10 @@ There will be some terms I use you may not understand, so I wanted to explain th
 
 ### Levels
 The depth level (it's what I say) of the functions, as the level get higher, the functions get less documented and harder to understand.
+<br><br><br>
+<a href="https://discord.gg/9qe38utdBJ" target="blank"><img align="center" src="https://raw.githubusercontent.com/rahuldkjain/github-profile-readme-generator/master/src/images/icons/Social/discord.svg" alt="9qe38utdBJ" height="30" width="30" /></a> [Discord](https://discord.gg/9qe38utdBJ "For other questions etc.")
+
+
 
 <hr>
 
