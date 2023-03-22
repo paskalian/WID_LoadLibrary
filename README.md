@@ -378,8 +378,13 @@ HMODULE __stdcall LoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFl
 }
 ```
 
-So from there on, we can see there is 2 pathways
-1- LdrLoadDll
-2- BasepLoadLibraryAsDataFileInternal
+So from there on, we can see there is 2 pathways;
+1. LdrLoadDll
+2. BasepLoadLibraryAsDataFileInternal
 
-I will be focused on LdrLoadDll and so on, but will check BasepLoadLibraryAsDataFileInternal too.
+I will be focused on LdrLoadDll and so on because that's the main way, but will check BasepLoadLibraryAsDataFileInternal too.
+
+<hr>
+
+# Level 3
+The functions get even less documented, googling around to gather information gets you less accurate results, checking out yourself might be the best course here.
