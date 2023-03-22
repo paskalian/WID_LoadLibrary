@@ -569,8 +569,8 @@ NTSTATUS __fastcall LdrLoadDll(PWSTR DllPath, PULONG pFlags, PUNICODE_STRING Dll
             PUNICODE_STRING DllPathInited[16];
             LdrpInitializeDllPath(DllName->Buffer, DllPath, DllPathInited);
 
-            UINT_PTR DllBaseAddress;
-            Status = LdrpLoadDll(DllName, DllPathInited, FlagUsed, &DllBaseAddress);
+            LDR_DATA_TABLE_ENTRY* DllEntry;
+            Status = LdrpLoadDll(DllName, DllPathInited, FlagUsed, &DllEntry);
             // (BY DEFAULT FalseBool WAS USED HERE) Even though I called it FalseBool, I am uncertain about the behaviour.
             // if (FalseBool)
 
@@ -584,8 +584,8 @@ NTSTATUS __fastcall LdrLoadDll(PWSTR DllPath, PULONG pFlags, PUNICODE_STRING Dll
             if (NT_SUCCESS(Status))
             {
                 // Changes the actual return value and dereferences the module.
-                *BaseAddress = *(PVOID*)(DllBaseAddress + 0x30);
-                LdrpDereferenceModule((PVOID)DllBaseAddress);
+                *BaseAddress = DllEntry->DllBase;
+                LdrpDereferenceModule(DllEntry);
             }
         }
     }
