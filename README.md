@@ -601,3 +601,41 @@ NTSTATUS __fastcall LdrLoadDll(PWSTR DllPath, PULONG pFlags, PUNICODE_STRING Dll
 
 We are still not in the main dll loading part, as you can also see there's still a deeper function
 - LdrpLoadDll
+
+### LdrpLoadDll (IDA Pseudocode)
+```cpp
+NTSTATUS __fastcall LdrpLoadDll(
+        PUNICODE_STRING DllName,
+        PUNICODE_STRING *DllPathInited,
+        int Flags,
+        LDR_DATA_TABLE_ENTRY **DllEntry)
+{
+  int v4; // edi
+  int v8; // [rsp+50h] [rbp-B0h] BYREF
+  NTSTATUS v9; // [rsp+58h] [rbp-A8h] BYREF
+  int v10; // [rsp+60h] [rbp-A0h] BYREF
+  __int16 *v11; // [rsp+68h] [rbp-98h]
+  __int16 v12[128]; // [rsp+70h] [rbp-90h] BYREF
+
+  v4 = (int)DllPathInited;
+  v8 = Flags;
+  LdrpLogDllState(0i64, DllName, 5288i64);
+  v10 = 0x1000000;
+  v11 = v12;
+  v12[0] = 0;
+  v9 = LdrpPreprocessDllName(DllName, &v10, 0i64, &v8);
+  if ( v9 >= 0 )
+    LdrpLoadDllInternal((unsigned int)&v10, v4, v8, 4, 0i64, 0i64, (__int64)DllEntry, (__int64)&v9, 0i64);
+  if ( v12 != v11 )
+    NtdllpFreeStringRoutine();
+  v10 = 0x1000000;
+  v11 = v12;
+  v12[0] = 0;
+  LdrpLogDllState(0i64, DllName, 5289i64);
+  return v9;
+}
+```
+### LdrpLoadDll (Simplified & Explained)
+```cpp
+// TO DO
+```
