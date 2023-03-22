@@ -345,7 +345,7 @@ HMODULE __stdcall LoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFl
 
         // Evaluates dwFlags to get meaningful flags, includes DONT_RESOLVE_DLL_REFERENCES finally.
         // But it doesn't matter because the first param LdrLoadDll takes actually a (PWCHAR PathToFile), so I have no idea why that's done.
-        Status = LdrLoadDll((PWCHAR)((dwFlags & LOADLIBRARY_7F08) | 1), ConvertedFlags, &DllName, &BaseOfLoadedDll);
+        Status = LdrLoadDll((PWCHAR)((dwFlags & LOADLIBRARY_7F08) | 1), &ConvertedFlags, &DllName, &BaseOfLoadedDll);
         if (NT_SUCCESS(Status))
             return BaseOfLoadedDll;
 
