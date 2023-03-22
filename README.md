@@ -388,3 +388,94 @@ I will be focused on LdrLoadDll and so on because that's the main way, but will 
 
 # Level 3
 The functions get even less documented, googling around to gather information gets you less accurate results, checking out yourself might be the best course here.
+
+### LdrLoadDll (IDA Pseudocode)
+```cpp
+NTSTATUS __fastcall LdrLoadDll(PWSTR SearchPath, PULONG Flags, PUNICODE_STRING DllName, PVOID *BaseAddress)
+{
+  signed int v7; // eax
+  ULONG v8; // ecx
+  int v9; // edx
+  int v10; // r8d
+  int v11; // ecx
+  unsigned int v12; // ebx
+  NTSTATUS v13; // ebx
+  __int64 v15; // [rsp+28h] [rbp-C0h]
+  __int64 v16; // [rsp+30h] [rbp-B8h] BYREF
+  __int64 v17[15]; // [rsp+40h] [rbp-A8h] BYREF
+  char v18; // [rsp+BCh] [rbp-2Ch]
+
+  if ( Flags )
+  {
+    v7 = *Flags;
+    v8 = 2 * (*Flags & 4);
+    v9 = v8 | 0x40;
+    if ( (v7 & 2) == 0 )
+      v9 = v8;
+    v10 = v9 | 0x80;
+    if ( (v7 & 0x800000) == 0 )
+      v10 = v9;
+    v11 = v10 | 0x100;
+    if ( (v7 & 0x1000) == 0 )
+      v11 = v10;
+    v12 = v11 | 0x400000;
+    if ( v7 >= 0 )
+      v12 = v11;
+  }
+  else
+  {
+    v12 = 0;
+  }
+  LdrpLogInternal(
+    (unsigned int)"minkernel\\ntdll\\ldrapi.c",
+    580,
+    (unsigned int)"LdrLoadDll",
+    3,
+    "DLL name: %wZ\n",
+    DllName);
+  if ( (LdrpPolicyBits & 4) == 0 && ((unsigned __int16)SearchPath & 0x401) == 1025i64 )
+    return -1073741811;
+  if ( (v12 & 8) == 0 || (LdrpPolicyBits & 8) != 0 )
+  {
+    if ( (NtCurrentTeb()->SameTebFlags & 0x2000) != 0 )
+    {
+      v13 = -1073740004;
+    }
+    else
+    {
+      LdrpInitializeDllPath(DllName->Buffer, SearchPath, v17);
+      v13 = LdrpLoadDll(DllName, v17, v12, &v16);
+      if ( v18 )
+        RtlReleasePath(v17[0]);
+      if ( v13 >= 0 )
+      {
+        *BaseAddress = *(PVOID *)(v16 + 48);
+        LdrpDereferenceModule();
+      }
+    }
+  }
+  else
+  {
+    LdrpLogInternal(
+      (unsigned int)"minkernel\\ntdll\\ldrapi.c",
+      601,
+      (unsigned int)"LdrLoadDll",
+      0,
+      "Nonpackaged process attempted to load a packaged DLL.\n");
+    v13 = -1073741398;
+  }
+  LODWORD(v15) = v13;
+  LdrpLogInternal(
+    (unsigned int)"minkernel\\ntdll\\ldrapi.c",
+    633,
+    (unsigned int)"LdrLoadDll",
+    4,
+    "Status: 0x%08lx\n",
+    v15);
+  return v13;
+}
+```
+### LdrLoadDll (Simplified & Explained)
+```cpp
+// TO DO
+```
