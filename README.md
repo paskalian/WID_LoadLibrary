@@ -883,5 +883,214 @@ LABEL_4:
 ```
 ### LdrpLoadDllInternal (Simplified & Explained)
 ```cpp
-// TO DO
+// NTSTATUS
+#define STATUS_IMAGE_LOADED_AS_PATCH_IMAGE 0xC00004C0
+#define STATUS_PATCH_CONFLICT 0xC00004AC
+#define STATUS_RETRY 0xC000022D
+
+// TEB.SameTebFlags
+#define LoadOwner 0x1000
+
+// LDR_DATA_TABLE_ENTRY.Flags
+#define PackagedBinary 0x1
+#define LoadNotificationsSent 0x8
+
+NTSTATUS __fastcall LdrpLoadDllInternal(PUNICODE_STRING FullPath, PUNICODE_STRING* DllPathInited, ULONG Flags, LONG LdrFlags, PLDR_DATA_TABLE_ENTRY LdrEntry, PLDR_DATA_TABLE_ENTRY LdrEntry2, LDR_DATA_TABLE_ENTRY** DllEntry, NTSTATUS* pStatus, ULONGLONG Zero)
+{
+    NTSTATUS Status;
+
+    // NOTES:
+    // I assumed that LdrFlags (which was sent as 0x4 (ImageDll) by LdrpLoadDll) is the same flags inside LDR_DATA_TABLE_ENTRY.
+    // LdrEntry & LdrEntry2 were both sent as 0s by LdrpLoadDll.
+    // 
+    // Instead of using gotos which causes the local variables to be initialized in the start of the function (making it look not good in my opinion)
+    // I created a do-while loop. The outcome won't be affected.
+    //
+    // MOST FLAGS = CONVERTED_DONT_RESOLVE_DLL_REFERENCES (0x2) | LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE (0x40) | LOAD_LIBRARY_REQUIRE_SIGNED_TARGET (0x80)
+
+    LdrpLogInternal("minkernel\\ntdll\\ldrapi.c", 0x379, "LdrpLoadDllInternal", 3, "DLL name: %wZ\n", FullPath);
+    do
+    {
+        *DllEntry = 0;
+
+        // This will go in.
+        if (LdrFlags != (LoadNotificationsSent | PackagedBinary))
+        {
+            // This function does some prior setup, incrementing the module load count is done inside here.
+            Status = LdrpFastpthReloadedDll(FullPath, Flags, LdrEntry2, DllEntry);
+
+            // If not an actual nt success (excludes warnings) OR Status is STATUS_IMAGE_LOADED_AS_PATCH_IMAGE
+            if ((NT_SUCCESS((Status + 0x80000000)) == FALSE) || Status == STATUS_IMAGE_LOADED_AS_PATCH_IMAGE)
+            {
+                *pStatus = Status;
+                break;
+            }
+        }
+
+        bool IsWorkerThread = ((((sPTEB)(NtCurrentTeb()))->SameTebFlags & LoadOwner) == 0);
+        if (IsWorkerThread)
+            // I checked the function a bit, couldn't understand much, in the end it resets the current thread to be not a worker thread (ORs with LoadOwner)
+            // Also sending 0 to this function causes the Event handle to be a work complete event.
+            LdrpDrainWorkQueue(0);
+
+        // This won't go in so we can ignore it. I still did simplifying though.
+        if (LdrFlags == (LoadNotificationsSent | PackagedBinary))
+        {
+            Status = LdrpFindLoadedDllByHandle(Zero, &LdrEntry, 0);
+            if (!NT_SUCCESS(Status))
+            {
+            // FREE_DLLNAMEPREPROCANDRETURN;
+                if (FullPath->Buffer)
+                    LdrpFreeUnicodeString(FullPath);
+
+                *pStatus = Status;
+                if (IsWorkerThread)
+                    LdrpDropLastInProgressCount();
+                break;
+            }
+
+            if (LdrEntry->HotPatchState == LdrHotPatchFailedToPatch)
+            {
+                Status = STATUS_PATCH_CONFLICT;
+
+                // goto FREE_DLLNAMEPREPROCANDRETURN;
+                if (FullPath->Buffer)
+                    LdrpFreeUnicodeString(FullPath);
+
+                *pStatus = Status;
+                if (IsWorkerThread)
+                    LdrpDropLastInProgressCount();
+                break;
+            }
+
+            Status = LdrpQueryCurrentPatch(LdrEntry->CheckSum, LdrEntry->TimeDateStamp, FullPath);
+            if (!NT_SUCCESS(Status))
+            {
+                // goto FREE_DLLNAMEPREPROCANDRETURN;
+                if (FullPath->Buffer)
+                    LdrpFreeUnicodeString(FullPath);
+
+                *pStatus = Status;
+                if (IsWorkerThread)
+                    LdrpDropLastInProgressCount();
+                break;
+            }
+
+            if (!FullPath->Length)
+            {
+                if (LdrEntry->ActivePatchImageBase)
+                    Status = LdrpUndoPatchImage(LdrEntry);
+
+                // goto FREE_DLLNAMEPREPROCANDRETURN;
+                if (FullPath->Buffer)
+                    LdrpFreeUnicodeString(FullPath);
+
+                *pStatus = Status;
+                if (IsWorkerThread)
+                    LdrpDropLastInProgressCount();
+                break;
+            }
+
+            LdrpLogInternal("minkernel\\ntdll\\ldrapi.c", 0x3FA, "LdrpLoadDllInternal", 2, "Loading patch image: %wZ\n", FullPath);
+           
+        }
+        
+        // Opens a token to the current thread and sets GLOBAL variable LdrpMainThreadToken with that token.
+        LdrpThreadTokenSetMainThreadToken();
+        
+        LDR_DATA_TABLE_ENTRY* pLdrEntryLoaded = 0;
+        // This will go in by the first check LdrEntry2 because it was sent as 0 in LdrpLoadDll.
+        if (!LdrEntry2 || !IsWorkerThread || LdrEntry2->DdagNode->LoadCount)
+        {
+            // I checked the function, it detects a hook by byte scanning these following functions;
+            // • ntdll!NtOpenFile
+            // • ntdll!NtCreateSection
+            // • ntdll!ZqQueryAttributes
+            // • ntdll!NtOpenSection
+            // • ntdll!ZwMapViewOfSection
+            // Resulting in the global variable LdrpDetourExist to be set if there's a hook, didn't checked what's done with it though.
+            LdrpDetectDetour();
+
+            Status = LdrpFindOrPrepareLoadingModule(FullPath, DllPathInited, Flags, LdrFlags, LdrEntry, &pLdrEntryLoaded, pStatus);
+            if (Status == STATUS_DLL_NOT_FOUND)
+                LdrpProcessWork(pLdrEntryLoaded->LoadContext, 1);
+            else if (Status != STATUS_RETRY && NT_SUCCESS(Status) == FALSE)
+                *pStatus = Status;
+        }
+        else
+        {
+            *pStatus = STATUS_DLL_NOT_FOUND;
+        }
+
+        // Sending 1 to this function causes the Event handle to be a load complete event.
+        LdrpDrainWorkQueue(1);
+
+        if (LdrpMainThreadToken)
+            // Closes the token handle, and sets GLOBAL variable LdrpMainThreadToken to 0.
+            LdrpThreadTokenUnsetMainThreadToken();
+        if (pLdrEntryLoaded)
+        {
+            *DllEntry = LdrpHandleReplacedModule(pLdrEntryLoaded);
+            if (pLdrEntryLoaded != *DllEntry)
+            {
+                LdrpFreeReplacedModule(pLdrEntryLoaded);
+                pLdrEntryLoaded = *DllEntry;
+                // LoadNotificationsSent (0x8) | PackagedBinary (0x1)
+                if (pLdrEntryLoaded->LoadReason == LoadReasonPatchImage && LdrFlags != (LoadNotificationsSent | PackagedBinary))
+                    *pStatus = STATUS_IMAGE_LOADED_AS_PATCH_IMAGE;
+            }
+            if (pLdrEntryLoaded->LoadContext)
+                LdrpCondenseGraph(pLdrEntryLoaded->DdagNode);
+            if (NT_SUCCESS(*pStatus))
+            {
+                Status = LdrpPrepareModuleForExecution(pLdrEntryLoaded, pStatus);
+                *pStatus = Status;
+                if (NT_SUCCESS(Status))
+                {
+                    Status = LdrpBuildForwarderLink(LdrEntry2, pLdrEntryLoaded);
+                    *pStatus = Status;
+                    if (NT_SUCCESS(Status) && !LdrInitState)
+                        LdrpPinModule(pLdrEntryLoaded);
+                }
+                // LoadNotificationsSent (0x8) | PackagedBinary (0x1)
+                if (LdrFlags == (LoadNotificationsSent | PackagedBinary) && LdrEntry->ActivePatchImageBase != pLdrEntryLoaded->DllBase)
+                {
+                    if (pLdrEntryLoaded->HotPatchState == LdrHotPatchFailedToPatch)
+                    {
+                        *pStatus = STATUS_DLL_INIT_FAILED;
+                    }
+                    else
+                    {
+                        Status = LdrpApplyPatchImage(pLdrEntryLoaded);
+                        *pStatus = Status;
+                        if (NT_SUCCESS(Status) == FALSE)
+                        {
+                            UNICODE_STRING Names[4];
+                            Names[0] = pLdrEntryLoaded->FullDllName;
+                            LdrpLogInternal("minkernel\\ntdll\\ldrapi.c", 0x4AF, "LdrpLoadDllInternal", 0, "Applying patch \"%wZ\" failed\n", Names);
+                        }
+                    }
+                }
+            }
+            LdrpFreeLoadContextOfNode(pLdrEntryLoaded->DdagNode, pStatus);
+            // LoadNotificationsSent (0x8) | PackagedBinary (0x1)
+            if (*pStatus < 0 && (LdrFlags != (LoadNotificationsSent | PackagedBinary) || pLdrEntryLoaded->HotPatchState != LdrHotPatchAppliedReverse))
+            {
+                *DllEntry = 0;
+                LdrpDecrementModuleLoadCountEx(pLdrEntryLoaded, 0);
+                LdrpDereferenceModule(pLdrEntryLoaded);
+            }
+        }
+        else
+        {
+            *pStatus = STATUS_NO_MEMORY;
+        }
+    } while (FALSE);
+
+    // LoadNotificationsSent (0x8) | PackagedBinary (0x1)
+    if (LdrFlags == (LoadNotificationsSent | PackagedBinary) && LdrEntry)
+        LdrpDereferenceModule(LdrEntry);
+
+    return LdrpLogInternal("minkernel\\ntdll\\ldrapi.c", 0x52E, "LdrpLoadDllInternal", 4, "Status: 0x%08lx\n", *pStatus);
+}
 ```
