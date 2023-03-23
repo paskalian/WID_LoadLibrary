@@ -934,6 +934,7 @@ NTSTATUS __fastcall LdrpLoadDllInternal(PUNICODE_STRING FullPath, PUNICODE_STRIN
             LdrpDrainWorkQueue(0);
 
         // This won't go in so we can ignore it. I still did simplifying though.
+        // Because the LdrFlags was sent 0x4 (ImageDll), we can ignore this one.
         if (LdrFlags == (LoadNotificationsSent | PackagedBinary))
         {
             Status = LdrpFindLoadedDllByHandle(Zero, &LdrEntry, 0);
@@ -1011,6 +1012,8 @@ NTSTATUS __fastcall LdrpLoadDllInternal(PUNICODE_STRING FullPath, PUNICODE_STRIN
             // Resulting in the global variable LdrpDetourExist to be set if there's a hook, didn't checked what's done with it though.
             LdrpDetectDetour();
 
+            // Finds the module, increments the loaded module count.
+            // It can go to another direction if the Flag LOAD_LIBRARY_SEARCH_APPLICATION_DIR was set, but that couldn't be set coming from LoadLibraryExW.
             Status = LdrpFindOrPrepareLoadingModule(FullPath, DllPathInited, Flags, LdrFlags, LdrEntry, &pLdrEntryLoaded, pStatus);
             if (Status == STATUS_DLL_NOT_FOUND)
                 LdrpProcessWork(pLdrEntryLoaded->LoadContext, 1);
@@ -1043,6 +1046,10 @@ NTSTATUS __fastcall LdrpLoadDllInternal(PUNICODE_STRING FullPath, PUNICODE_STRIN
                 LdrpCondenseGraph(pLdrEntryLoaded->DdagNode);
             if (NT_SUCCESS(*pStatus))
             {
+                // In here I realized that the module must have already been loaded to be prepared for execution.
+                // So I've gone a little back and realized the actual loading was done in the LdrpDrainWorkQueue function.
+
+                // This function is pretty interesting too, had a quick look and seen a lot. Gonna reverse this one too.
                 Status = LdrpPrepareModuleForExecution(pLdrEntryLoaded, pStatus);
                 *pStatus = Status;
                 if (NT_SUCCESS(Status))
@@ -1053,6 +1060,7 @@ NTSTATUS __fastcall LdrpLoadDllInternal(PUNICODE_STRING FullPath, PUNICODE_STRIN
                         LdrpPinModule(pLdrEntryLoaded);
                 }
                 // LoadNotificationsSent (0x8) | PackagedBinary (0x1)
+                // Because the LdrFlags was sent 0x4 (ImageDll), we can ignore this one too.
                 if (LdrFlags == (LoadNotificationsSent | PackagedBinary) && LdrEntry->ActivePatchImageBase != pLdrEntryLoaded->DllBase)
                 {
                     if (pLdrEntryLoaded->HotPatchState == LdrHotPatchFailedToPatch)
@@ -1074,7 +1082,7 @@ NTSTATUS __fastcall LdrpLoadDllInternal(PUNICODE_STRING FullPath, PUNICODE_STRIN
             }
             LdrpFreeLoadContextOfNode(pLdrEntryLoaded->DdagNode, pStatus);
             // LoadNotificationsSent (0x8) | PackagedBinary (0x1)
-            if (*pStatus < 0 && (LdrFlags != (LoadNotificationsSent | PackagedBinary) || pLdrEntryLoaded->HotPatchState != LdrHotPatchAppliedReverse))
+            if (!NT_SUCCESS(*pStatus) && (LdrFlags != (LoadNotificationsSent | PackagedBinary) || pLdrEntryLoaded->HotPatchState != LdrHotPatchAppliedReverse))
             {
                 *DllEntry = 0;
                 LdrpDecrementModuleLoadCountEx(pLdrEntryLoaded, 0);
@@ -1088,9 +1096,118 @@ NTSTATUS __fastcall LdrpLoadDllInternal(PUNICODE_STRING FullPath, PUNICODE_STRIN
     } while (FALSE);
 
     // LoadNotificationsSent (0x8) | PackagedBinary (0x1)
+    // Because the LdrFlags was sent 0x4 (ImageDll), we can ignore this one too.
     if (LdrFlags == (LoadNotificationsSent | PackagedBinary) && LdrEntry)
         LdrpDereferenceModule(LdrEntry);
 
     return LdrpLogInternal("minkernel\\ntdll\\ldrapi.c", 0x52E, "LdrpLoadDllInternal", 4, "Status: 0x%08lx\n", *pStatus);
 }
+```
+
+Well we have again came to a "road break" in here;
+- LdrpDrainWorkQueue
+  - This function is going deeper in the mapping mechanism.
+- LdrpPrepareModuleForExecution
+  - This function is going deeper in the execution mechanism.
+
+Starting off with LdrpDrainWorkQueue would be the best course since it's the first called and also mapping is my priority right now. Then we will check LdrpPrepareModuleForExecution.
+
+<hr>
+
+# Core
+
+Since we are getting into the core of the function I've decided to seperate it from the rest.
+
+### LdrpDrainWorkQueue (IDA Pseudocode)
+```cpp
+struct _TEB *__fastcall LdrpDrainWorkQueue(int Zero)
+{
+  HANDLE EventHandle; // r14
+  bool v2; // si
+  bool DetourExist; // bp
+  LIST_ENTRY *WorkQueue; // rbx
+  _LIST_ENTRY *Entry; // rax
+  struct _TEB *CurrentThread; // rax
+  LIST_ENTRY *v8; // rax
+  __int64 v9; // rax
+
+  EventHandle = LdrpWorkCompleteEvent;
+  v2 = 0;
+  if ( !Zero )
+    EventHandle = LdrpLoadCompleteEvent;
+  while ( 1 )
+  {
+    while ( 1 )
+    {
+      RtlEnterCriticalSection(&LdrpWorkQueueLock);
+      DetourExist = LdrpDetourExist;
+      // If detour doesn't exist or Zero is 1
+      // In our case this will go in by the first, because we don't hook any functions.
+      if ( !LdrpDetourExist || Zero == 1 )
+      {
+        WorkQueue = LdrpWorkQueue;
+        if ( LdrpWorkQueue->Blink != &LdrpWorkQueue
+          || (Entry = LdrpWorkQueue->Flink, LdrpWorkQueue->Flink->Blink != LdrpWorkQueue) )
+        {
+          __fastfail(3u);
+        }
+        // Ensuring
+        LdrpWorkQueue = LdrpWorkQueue->Flink;
+        Entry->Blink = &LdrpWorkQueue;
+        if ( &LdrpWorkQueue == WorkQueue )
+        {
+          if ( LdrpWorkInProgress == Zero )
+          {
+            LdrpWorkInProgress = 1;
+            v2 = 1;
+          }
+        }
+        else
+        {
+          if ( !DetourExist )
+            ++LdrpWorkInProgress;
+          LdrpUpdateStatistics();
+        }
+      }
+      else
+      {
+        if ( LdrpWorkInProgress == Zero )
+        {
+          LdrpWorkInProgress = 1;
+          v2 = 1;
+        }
+        WorkQueue = &LdrpWorkQueue;
+      }
+      RtlLeaveCriticalSection(&LdrpWorkQueueLock);
+      if ( v2 )
+        break;
+      if ( &LdrpWorkQueue == WorkQueue )
+        NtWaitForSingleObject(EventHandle, 0, 0i64);
+      else
+        LdrpProcessWork(&WorkQueue[-4], DetourExist);
+    }
+    if ( !Zero || LdrpRetryQueue == &LdrpRetryQueue )
+      break;
+    RtlEnterCriticalSection(&LdrpWorkQueueLock);
+    v8 = LdrpRetryQueue;
+    *(LdrpRetryQueue + 8) = &LdrpWorkQueue;
+    LdrpWorkQueue = v8;
+    v9 = qword_180184258;
+    *qword_180184258 = &LdrpWorkQueue;
+    qword_1801842B8 = v9;
+    qword_180184258 = &LdrpRetryQueue;
+    LdrpRetryQueue = &LdrpRetryQueue;
+    LdrpRetryingModuleIndex = 0i64;
+    RtlLeaveCriticalSection(&LdrpWorkQueueLock);
+    v2 = 0;
+  }
+  CurrentThread = NtCurrentTeb();
+  // Sets the current thread as a worker thread.
+  CurrentThread->SameTebFlags |= 0x1000u;
+  return CurrentThread;
+}
+```
+### LdrpDrainWorkQueue (Simplified & Explained)
+```cpp
+// TO DO.
 ```
