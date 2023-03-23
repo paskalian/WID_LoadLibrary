@@ -637,5 +637,37 @@ NTSTATUS __fastcall LdrpLoadDll(
 ```
 ### LdrpLoadDll (Simplified & Explained)
 ```cpp
-// TO DO
+NTSTATUS __fastcall LdrpLoadDll(PUNICODE_STRING DllName, PUNICODE_STRING* DllPathInited, ULONG Flags, LDR_DATA_TABLE_ENTRY** DllEntry)
+{
+    NTSTATUS Status;
+
+    LdrpLogDllState(0, DllName, 0x14A8);
+
+    // Flags is passed by value so no need to create a backup, it's already a backup by itself.
+    // ULONG Flags2 = Flags;
+
+    // Creates a new unicode_string and allocates it some buffer.
+    UNICODE_STRING FullDllPath;
+    WCHAR Buffer[128];
+    // Sets the according members.
+    FullDllPath.Length = 0x1000000;
+    FullDllPath.Buffer = Buffer;
+    Buffer[0] = 0;
+
+    // Returns the Absolute path
+    Status = LdrpPreprocessDllName(DllName, &FullDllPath, 0, &Flags);
+    if (NT_SUCCESS(Status))
+        // A even deeper function, by far we can see Windows is kinda all *wrapped* around each other.
+        LdrpLoadDllInternal(&FullDllPath, DllPathInited, Flags, 4, 0, 0, DllEntry, &Status, 0);
+
+    if (Buffer != FullDllPath.Buffer)
+        NtdllpFreeStringRoutine(FullDllPath.Buffer);
+
+    // I don't see no point in this but anyways.
+    FullDllPath.Length = 0x1000000;
+    FullDllPath.Buffer = Buffer;
+    Buffer[0] = 0;
+    LdrpLogDllState(0, DllName, 0x14A9);
+    return Status;
+}
 ```
