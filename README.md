@@ -674,3 +674,214 @@ NTSTATUS __fastcall LdrpLoadDll(PUNICODE_STRING DllName, PUNICODE_STRING* DllPat
 This is what do we have so far.
 <br><br>
 ![WINSERIES_DIAGRAM1](Images/WinSeries_0x1_Diagram.png "WINSERIES_DIAGRAM1")
+
+I feel like we are getting closer, still got some functions to deal with, let's go on with LdrpLoadDllInternal.
+
+### LdrpLoadDllInternal (IDA Pseudocode)
+```cpp
+__int64 __fastcall LdrpLoadDllInternal(
+        PUNICODE_STRING String,
+        PUNICODE_STRING *DllPathInited,
+        unsigned int Flags,
+        int Four,
+        __int64 Zero,
+        __int64 Zero_2,
+        LDR_DATA_TABLE_ENTRY **DllEntry,
+        NTSTATUS *pStatus,
+        __int64 Zero_3)
+{
+  unsigned int v10; // esi
+  LDR_DATA_TABLE_ENTRY **v12; // r13
+  __int64 v13; // rdi
+  NTSTATUS v14; // eax
+  NTSTATUS *v15; // rbx
+  char v17; // r15
+  int v18; // eax
+  __int64 v19; // rdx
+  __int64 v20; // rax
+  int v21; // eax
+  int v22; // eax
+  int v23; // eax
+  NTSTATUS LoadedDllByHandle; // esi
+  __int64 v25; // [rsp+28h] [rbp-70h]
+  LDR_DATA_TABLE_ENTRY *v26; // [rsp+40h] [rbp-58h] BYREF
+  __int128 v27[4]; // [rsp+50h] [rbp-48h] BYREF
+
+  v10 = Flags;
+  LdrpLogInternal(
+    (unsigned int)"minkernel\\ntdll\\ldrapi.c",
+    889,
+    (unsigned int)"LdrpLoadDllInternal",
+    3,
+    "DLL name: %wZ\n",
+    String);
+  v12 = DllEntry;
+  *DllEntry = 0i64;
+  v26 = 0i64;
+  v13 = Zero_2;
+  if ( Four != 9 )
+  {
+    v14 = LdrpFastpthReloadedDll(String, v10, Zero_2, v12);
+    if ( (int)(v14 + 0x80000000) < 0 || v14 == -1073740608 )
+    {
+      v15 = pStatus;
+      *pStatus = v14;
+      goto LABEL_4;
+    }
+  }
+  if ( (NtCurrentTeb()->SameTebFlags & 0x1000) != 0 )
+  {
+    v17 = 1;
+  }
+  else
+  {
+    v17 = 0;
+    LdrpDrainWorkQueue(0i64);
+  }
+  if ( Four != 9 )
+    goto LABEL_10;
+  LoadedDllByHandle = LdrpFindLoadedDllByHandle(Zero_3, &Zero, 0i64);
+  if ( LoadedDllByHandle < 0 )
+  {
+LABEL_51:
+    if ( String->Buffer )
+      LdrpFreeUnicodeString(String);
+    v15 = pStatus;
+    *pStatus = LoadedDllByHandle;
+    goto LABEL_45;
+  }
+  if ( *(_DWORD *)(Zero + 304) == 4 )
+  {
+    LoadedDllByHandle = -1073740628;
+    goto LABEL_51;
+  }
+  v13 = Zero;
+  LoadedDllByHandle = LdrpQueryCurrentPatch(*(unsigned int *)(Zero + 288), *(unsigned int *)(Zero + 128), String);
+  if ( LoadedDllByHandle < 0 )
+    goto LABEL_51;
+  if ( !String->Length )
+  {
+    if ( *(_QWORD *)(v13 + 296) )
+      LoadedDllByHandle = LdrpUndoPatchImage(v13);
+    goto LABEL_51;
+  }
+  LdrpLogInternal(
+    (unsigned int)"minkernel\\ntdll\\ldrapi.c",
+    1018,
+    (unsigned int)"LdrpLoadDllInternal",
+    2,
+    "Loading patch image: %wZ\n",
+    String);
+  v10 = Flags;
+LABEL_10:
+  LdrpThreadTokenSetMainThreadToken();
+  if ( !v13 || v17 || *(_DWORD *)(*(_QWORD *)(v13 + 152) + 24i64) )
+  {
+    LdrpDetectDetour();
+    v15 = pStatus;
+    v18 = LdrpFindOrPrepareLoadingModule(
+            (_DWORD)String,
+            (_DWORD)DllPathInited,
+            v10,
+            Four,
+            Zero,
+            (__int64)&v26,
+            (__int64)pStatus);
+    if ( v18 == -1073741515 )
+    {
+      LOBYTE(v19) = 1;
+      LdrpProcessWork(v26->LoadContext, v19);
+    }
+    else if ( v18 != -1073741267 && v18 < 0 )
+    {
+      *v15 = v18;
+    }
+  }
+  else
+  {
+    v15 = pStatus;
+    *pStatus = -1073741515;
+  }
+  LdrpDrainWorkQueue(1i64);
+  if ( LdrpMainThreadToken )
+    LdrpThreadTokenUnsetMainThreadToken();
+  if ( v26 )
+  {
+    v20 = LdrpHandleReplacedModule();
+    *v12 = (LDR_DATA_TABLE_ENTRY *)v20;
+    if ( v26 != (LDR_DATA_TABLE_ENTRY *)v20 )
+    {
+      LdrpFreeReplacedModule(v26);
+      v26 = *v12;
+      if ( v26->LoadReason == LoadReasonPatchImage && Four != 9 )
+        *v15 = -1073740608;
+    }
+    if ( v26->LoadContext )
+      LdrpCondenseGraph(v26->DdagNode);
+    if ( *v15 >= 0 )
+    {
+      v21 = LdrpPrepareModuleForExecution(v26, v15);
+      *v15 = v21;
+      if ( v21 >= 0 )
+      {
+        v22 = LdrpBuildForwarderLink(v13, v26);
+        *v15 = v22;
+        if ( v22 >= 0 && !LdrInitState )
+          LdrpPinModule(v26);
+      }
+      if ( Four == 9 && *(void **)(Zero + 296) != v26->DllBase )
+      {
+        if ( v26->HotPatchState == LdrHotPatchFailedToPatch )
+        {
+          *v15 = -1073741502;
+        }
+        else
+        {
+          v23 = LdrpApplyPatchImage(v26);
+          *v15 = v23;
+          if ( v23 < 0 )
+          {
+            v27[0] = (__int128)v26->FullDllName;
+            LdrpLogInternal(
+              (unsigned int)"minkernel\\ntdll\\ldrapi.c",
+              1199,
+              (unsigned int)"LdrpLoadDllInternal",
+              0,
+              "Applying patch \"%wZ\" failed\n",
+              v27);
+          }
+        }
+      }
+    }
+    LdrpFreeLoadContextOfNode(v26->DdagNode, v15);
+    if ( *v15 < 0 && (Four != 9 || v26->HotPatchState != LdrHotPatchAppliedReverse) )
+    {
+      *v12 = 0i64;
+      LdrpDecrementModuleLoadCountEx(v26, 0i64);
+      LdrpDereferenceModule(v26);
+    }
+  }
+  else
+  {
+    *v15 = -1073741801;
+  }
+LABEL_45:
+  if ( !v17 )
+    LdrpDropLastInProgressCount();
+LABEL_4:
+  if ( Four == 9 && Zero )
+    LdrpDereferenceModule(Zero);
+  LODWORD(v25) = *v15;
+  return LdrpLogInternal(
+           (unsigned int)"minkernel\\ntdll\\ldrapi.c",
+           1326,
+           (unsigned int)"LdrpLoadDllInternal",
+           4,
+           "Status: 0x%08lx\n",
+           v25);
+}
+```
+### LdrpLoadDllInternal (Simplified & Explained)
+```cpp
+// TO DO
+```
