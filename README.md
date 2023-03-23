@@ -671,3 +671,6 @@ NTSTATUS __fastcall LdrpLoadDll(PUNICODE_STRING DllName, PUNICODE_STRING* DllPat
     return Status;
 }
 ```
+This is what do we have so far.
+<br><br>
+![WINSERIES_DIAGRAM1](Images/WinSeries_0x1_Diagram.png "WINSERIES_DIAGRAM1")
