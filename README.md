@@ -907,6 +907,12 @@ NTSTATUS __fastcall LdrpLoadDllInternal(PUNICODE_STRING FullPath, PUNICODE_STRIN
     // I created a do-while loop. The outcome won't be affected.
     //
     // MOST FLAGS = CONVERTED_DONT_RESOLVE_DLL_REFERENCES (0x2) | LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE (0x40) | LOAD_LIBRARY_REQUIRE_SIGNED_TARGET (0x80)
+    // LOAD_LIBRARY_SEARCH_APPLICATION_DIR (0x200) | LOAD_LIBRARY_SEARCH_USER_DIRS (0x400)
+    //
+    // Whilst debugging I realized flags came as 0x600 - LOAD_LIBRARY_SEARCH_USER_DIRS (0x400) | LOAD_LIBRARY_SEARCH_APPLICATION_DIR (0x200)
+    // I called LoadLibraryExW with Flags set to 0 and the path being absolute.
+    // Going a little back I realized the cause of this was LdrpPreprocessDllName inside LdrpLoadDll.
+    // If a non-relative (in our case absolute) path was sent to LdrpPreprocessDllName, it first gets the FullPath then ORs the actual flags with 0x600,
 
     LdrpLogInternal("minkernel\\ntdll\\ldrapi.c", 0x379, "LdrpLoadDllInternal", 3, "DLL name: %wZ\n", FullPath);
     do
@@ -1012,8 +1018,9 @@ NTSTATUS __fastcall LdrpLoadDllInternal(PUNICODE_STRING FullPath, PUNICODE_STRIN
             // Resulting in the global variable LdrpDetourExist to be set if there's a hook, didn't checked what's done with it though.
             LdrpDetectDetour();
 
-            // Finds the module, increments the loaded module count.
-            // It can go to another direction if the Flag LOAD_LIBRARY_SEARCH_APPLICATION_DIR was set, but that couldn't be set coming from LoadLibraryExW.
+            // [IGNORE THIS] Finds the module, increments the loaded module count. [IGNORE THIS]
+            // [IGNORE THIS] It can go to another direction if the Flag LOAD_LIBRARY_SEARCH_APPLICATION_DIR was set, but that couldn't be set coming from LoadLibraryExW. [IGNORE THIS]
+            // If LoadLibrary was given an absolute path, Flags will have LOAD_LIBRARY_SEARCH_APPLICATION_DIR causing this function to call LdrpLoadKnownDll.
             Status = LdrpFindOrPrepareLoadingModule(FullPath, DllPathInited, Flags, LdrFlags, LdrEntry, &pLdrEntryLoaded, pStatus);
             if (Status == STATUS_DLL_NOT_FOUND)
                 LdrpProcessWork(pLdrEntryLoaded->LoadContext, 1);
@@ -1049,7 +1056,7 @@ NTSTATUS __fastcall LdrpLoadDllInternal(PUNICODE_STRING FullPath, PUNICODE_STRIN
                 // In here I realized that the module must have already been loaded to be prepared for execution.
                 // So I've gone a little back and realized the actual loading was done in the LdrpDrainWorkQueue function.
 
-                // This function is pretty interesting too, had a quick look and seen a lot. Gonna reverse this one too.
+                // This function is pretty interesting, had a quick look and seen a lot. Gonna reverse this one too.
                 Status = LdrpPrepareModuleForExecution(pLdrEntryLoaded, pStatus);
                 *pStatus = Status;
                 if (NT_SUCCESS(Status))
