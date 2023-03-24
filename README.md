@@ -1021,6 +1021,9 @@ NTSTATUS __fastcall LdrpLoadDllInternal(PUNICODE_STRING FullPath, PUNICODE_STRIN
             // [IGNORE THIS] Finds the module, increments the loaded module count. [IGNORE THIS]
             // [IGNORE THIS] It can go to another direction if the Flag LOAD_LIBRARY_SEARCH_APPLICATION_DIR was set, but that couldn't be set coming from LoadLibraryExW. [IGNORE THIS]
             // If LoadLibrary was given an absolute path, Flags will have LOAD_LIBRARY_SEARCH_APPLICATION_DIR causing this function to call LdrpLoadKnownDll.
+            // In our case LdrpFindOrPrepareLoadingModule actually returns STATUS_DLL_NOT_FOUND, which I thought was a bad thing but after checking up inside
+            // inside LdrpProcessWork it didn't looked that bad.
+            // So our dll loading part is actually inside LdrpProcessWork (for calling LoadLibraryExW with an absolute path and 0 flags at least)
             Status = LdrpFindOrPrepareLoadingModule(FullPath, DllPathInited, Flags, LdrFlags, LdrEntry, &pLdrEntryLoaded, pStatus);
             if (Status == STATUS_DLL_NOT_FOUND)
                 LdrpProcessWork(pLdrEntryLoaded->LoadContext, 1);
@@ -1053,8 +1056,9 @@ NTSTATUS __fastcall LdrpLoadDllInternal(PUNICODE_STRING FullPath, PUNICODE_STRIN
                 LdrpCondenseGraph(pLdrEntryLoaded->DdagNode);
             if (NT_SUCCESS(*pStatus))
             {
-                // In here I realized that the module must have already been loaded to be prepared for execution.
-                // So I've gone a little back and realized the actual loading was done in the LdrpDrainWorkQueue function.
+                // [IGNORE THIS] In here I realized that the module must have already been loaded to be prepared for execution.
+                // [IGNORE THIS] So I've gone a little back and realized the actual loading was done in the LdrpDrainWorkQueue function.
+                // Doing more research revealed it was inside LdrpProcessWork after LdrpFindOrPrepareLoadingModule returning STATUS_DLL_NOT_FOUND.
 
                 // This function is pretty interesting, had a quick look and seen a lot. Gonna reverse this one too.
                 Status = LdrpPrepareModuleForExecution(pLdrEntryLoaded, pStatus);
@@ -1112,12 +1116,12 @@ NTSTATUS __fastcall LdrpLoadDllInternal(PUNICODE_STRING FullPath, PUNICODE_STRIN
 ```
 
 Well we have again came to a "road break" in here;
-- LdrpDrainWorkQueue
+- LdrpProcessWork
   - This function is going deeper in the mapping mechanism.
 - LdrpPrepareModuleForExecution
   - This function is going deeper in the execution mechanism.
 
-Starting off with LdrpDrainWorkQueue would be the best course since it's the first called and also mapping is my priority right now. Then we will check LdrpPrepareModuleForExecution.
+Starting off with LdrpProcessWork would be the best course since it's the first called and also mapping is my priority right now. Then we will check LdrpPrepareModuleForExecution.
 
 <hr>
 
@@ -1125,96 +1129,87 @@ Starting off with LdrpDrainWorkQueue would be the best course since it's the fir
 
 Since we are getting into the core of the function I've decided to seperate it from the rest.
 
-### LdrpDrainWorkQueue (IDA Pseudocode)
+### LdrpProcessWork (IDA Pseudocode)
 ```cpp
-struct _TEB *__fastcall LdrpDrainWorkQueue(int Zero)
+NTSTATUS __fastcall LdrpProcessWork(LDRP_LOAD_CONTEXT *LoadContext, bool One)
 {
-  HANDLE EventHandle; // r14
-  bool v2; // si
-  bool DetourExist; // bp
-  LIST_ENTRY *WorkQueue; // rbx
-  _LIST_ENTRY *Entry; // rax
-  struct _TEB *CurrentThread; // rax
-  LIST_ENTRY *v8; // rax
-  __int64 v9; // rax
+  NTSTATUS Status_2; // eax
+  NTSTATUS Status; // edi
+  int v6; // eax
+  bool SetWorkCompleteEvent; // bl
 
-  EventHandle = LdrpWorkCompleteEvent;
-  v2 = 0;
-  if ( !Zero )
-    EventHandle = LdrpLoadCompleteEvent;
-  while ( 1 )
+  *(_QWORD *)&Status_2 = LoadContext->ParentEntry;
+  if ( (int)**(_DWORD **)&Status_2 < 0 )
+    goto RETURN;
+  if ( LODWORD(LoadContext->WorkQueueListEntry.Flink[9].Blink[3].Blink) )
   {
-    while ( 1 )
-    {
-      RtlEnterCriticalSection(&LdrpWorkQueueLock);
-      DetourExist = LdrpDetourExist;
-      // If detour doesn't exist or Zero is 1
-      // In our case this will go in by the first, because we don't hook any functions.
-      if ( !LdrpDetourExist || Zero == 1 )
-      {
-        WorkQueue = LdrpWorkQueue;
-        if ( LdrpWorkQueue->Blink != &LdrpWorkQueue
-          || (Entry = LdrpWorkQueue->Flink, LdrpWorkQueue->Flink->Blink != LdrpWorkQueue) )
-        {
-          __fastfail(3u);
-        }
-        // Ensuring
-        LdrpWorkQueue = LdrpWorkQueue->Flink;
-        Entry->Blink = &LdrpWorkQueue;
-        if ( &LdrpWorkQueue == WorkQueue )
-        {
-          if ( LdrpWorkInProgress == Zero )
-          {
-            LdrpWorkInProgress = 1;
-            v2 = 1;
-          }
-        }
-        else
-        {
-          if ( !DetourExist )
-            ++LdrpWorkInProgress;
-          LdrpUpdateStatistics();
-        }
-      }
-      else
-      {
-        if ( LdrpWorkInProgress == Zero )
-        {
-          LdrpWorkInProgress = 1;
-          v2 = 1;
-        }
-        WorkQueue = &LdrpWorkQueue;
-      }
-      RtlLeaveCriticalSection(&LdrpWorkQueueLock);
-      if ( v2 )
-        break;
-      if ( &LdrpWorkQueue == WorkQueue )
-        NtWaitForSingleObject(EventHandle, 0, 0i64);
-      else
-        LdrpProcessWork(&WorkQueue[-4], DetourExist);
-    }
-    if ( !Zero || LdrpRetryQueue == &LdrpRetryQueue )
-      break;
-    RtlEnterCriticalSection(&LdrpWorkQueueLock);
-    v8 = LdrpRetryQueue;
-    *(LdrpRetryQueue + 8) = &LdrpWorkQueue;
-    LdrpWorkQueue = v8;
-    v9 = qword_180184258;
-    *qword_180184258 = &LdrpWorkQueue;
-    qword_1801842B8 = v9;
-    qword_180184258 = &LdrpRetryQueue;
-    LdrpRetryQueue = &LdrpRetryQueue;
-    LdrpRetryingModuleIndex = 0i64;
-    RtlLeaveCriticalSection(&LdrpWorkQueueLock);
-    v2 = 0;
+    Status_2 = LdrpSnapModule(LoadContext);
+    Status = Status_2;
   }
-  CurrentThread = NtCurrentTeb();
-  // Sets the current thread as a worker thread.
-  CurrentThread->SameTebFlags |= 0x1000u;
-  return CurrentThread;
+  else
+  {
+    if ( ((__int64)LoadContext->pFlags & 0x100000) != 0 )
+    {
+      Status_2 = LdrpMapDllRetry(LoadContext);
+    }
+    // LOAD_LIBRARY_SEARCH_APPLICATION_DIR (0x200)
+    else if ( ((__int64)LoadContext->pFlags & 0x200) != 0 )
+    {
+      Status_2 = LdrpMapDllFullPath(LoadContext);
+    }
+    else
+    {
+      Status_2 = LdrpMapDllSearchPath(LoadContext);
+    }
+    Status = Status_2;
+    // STATUS_RETRY (0xC000022D)
+    if ( Status_2 >= 0 || Status_2 == 0xC000022D )
+      goto RETURN;
+    Status_2 = LdrpLogInternal(
+                 (int)"minkernel\\ntdll\\ldrmap.c",
+                 2002,
+                 (__int64)"LdrpProcessWork",
+                 0,
+                 "Unable to load DLL: \"%wZ\", Parent Module: \"%wZ\", Status: 0x%x\n",
+                 LoadContext,
+                 (unsigned __int64)&LoadContext->Entry->FullDllName & (unsigned __int64)((unsigned __int128)-(__int128)(unsigned __int64)LoadContext->Entry >> 64),
+                 Status_2);
+    // STATUS_DLL_NOT_FOUND (0xC0000135)
+    if ( Status == 0xC0000135 )
+    {
+      LdrpLogError(0xC0000135i64, 25i64, 0i64, LoadContext);
+      LdrpLogDeprecatedDllEtwEvent(LoadContext);
+      LdrpLogLoadFailureEtwEvent(
+        (_DWORD)LoadContext,
+        (LODWORD(LoadContext->Entry) + 0x48) & ((unsigned __int128)-(__int128)(unsigned __int64)LoadContext->Entry >> 64),
+        0xC0000135,
+        (unsigned int)&LoadFailure,
+        0);
+      *(_QWORD *)&Status_2 = LoadContext->WorkQueueListEntry.Flink;
+      if ( (*(_BYTE *)(*(_QWORD *)&Status_2 + 104i64) & 0x20) != 0 )
+        Status_2 = LdrpReportError(LoadContext, 0i64, 0xC0000135i64);
+    }
+  }
+  if ( Status < 0 )
+  {
+    *(_QWORD *)&Status_2 = LoadContext->ParentEntry;
+    **(_DWORD **)&Status_2 = Status;
+  }
+RETURN:
+  if ( !One )
+  {
+    RtlEnterCriticalSection(&LdrpWorkQueueLock);
+    v6 = --LdrpWorkInProgress;
+    if ( LdrpWorkQueue != (LIST_ENTRY *)&LdrpWorkQueue || (SetWorkCompleteEvent = 1, v6 != 1) )
+      SetWorkCompleteEvent = 0;
+    Status_2 = RtlLeaveCriticalSection(&LdrpWorkQueueLock);
+    if ( SetWorkCompleteEvent )
+      return ZwSetEvent(LdrpWorkCompleteEvent, 0i64);
+  }
+  return Status_2;
 }
 ```
-### LdrpDrainWorkQueue (Simplified & Explained)
+### LdrpProcessWork (Simplified & Explained)
 ```cpp
 // TO DO.
 ```
