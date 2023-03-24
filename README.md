@@ -1211,6 +1211,8 @@ RETURN:
 ```
 ### LdrpProcessWork (Simplified & Explained)
 ```cpp
+#define ProcessStaticImport 0x20
+
 NTSTATUS __fastcall LdrpProcessWork(LDRP_LOAD_CONTEXT* LoadContext, bool One)
 {
     NTSTATUS Status;
@@ -1222,7 +1224,7 @@ NTSTATUS __fastcall LdrpProcessWork(LDRP_LOAD_CONTEXT* LoadContext, bool One)
             break;
 
         // Caused most likely because CONTAINING_RECORD macro was used, I have no idea what's going on.
-        // Might also be because the LDRP_LOAD_CONTEXT structure isn't fully documented and the version I use might not align. Does it's job though.
+        // Also the structure used (LDRP_LOAD_CONTEXT) isn't documented, that's what I've got out of it so far.
         if ((DWORD)LoadContext->WorkQueueListEntry.Flink[9].Blink[3].Blink)
         {
             Status = LdrpSnapModule(LoadContext);
@@ -1256,7 +1258,7 @@ NTSTATUS __fastcall LdrpProcessWork(LDRP_LOAD_CONTEXT* LoadContext, bool One)
                 LdrpLogLoadFailureEtwEvent((PVOID)LoadContext, (PVOID)(((UINT_PTR)((LoadContext->Entry) + 0x48)) & ((UINT_PTR)(LoadContext->Entry) >> 64)), STATUS_DLL_NOT_FOUND, &LoadFailure, 0);
                 
                 PLDR_DATA_TABLE_ENTRY pLdrEntry = (PLDR_DATA_TABLE_ENTRY)LoadContext->WorkQueueListEntry.Flink;
-                if ((pLdrEntry->FlagGroup[0] & 0x20) != 0)
+                if ((pLdrEntry->FlagGroup[0] & ProcessStaticImport) != 0)
                     Status = LdrpReportError(LoadContext, 0, STATUS_DLL_NOT_FOUND);
             }
         }
