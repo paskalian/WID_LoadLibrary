@@ -1221,7 +1221,8 @@ NTSTATUS __fastcall LdrpProcessWork(LDRP_LOAD_CONTEXT* LoadContext, bool One)
         if (!NT_SUCCESS(Status))
             break;
 
-        // Caused most likely beacuse CONTAINING_RECORD macro was used, I have no idea what's going on.
+        // Caused most likely because CONTAINING_RECORD macro was used, I have no idea what's going on.
+        // Might also be because the LDRP_LOAD_CONTEXT structure isn't fully documented and the version I use might not align. Does it's job though.
         if ((DWORD)LoadContext->WorkQueueListEntry.Flink[9].Blink[3].Blink)
         {
             Status = LdrpSnapModule(LoadContext);
