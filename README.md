@@ -1211,5 +1211,74 @@ RETURN:
 ```
 ### LdrpProcessWork (Simplified & Explained)
 ```cpp
-// TO DO.
+NTSTATUS __fastcall LdrpProcessWork(LDRP_LOAD_CONTEXT* LoadContext, bool One)
+{
+    NTSTATUS Status;
+
+    do
+    {
+        Status = *LoadContext->pStatus;
+        if (!NT_SUCCESS(Status))
+            break;
+
+        // Caused most likely beacuse CONTAINING_RECORD macro was used, I have no idea what's going on.
+        if ((DWORD)LoadContext->WorkQueueListEntry.Flink[9].Blink[3].Blink)
+        {
+            Status = LdrpSnapModule(LoadContext);
+        }
+        else
+        {
+            if ((LoadContext->Flags & 0x100000) != 0)
+            {
+                Status = LdrpMapDllRetry(LoadContext);
+            }
+            // We will continue from here since we have the LOAD_LIBRARY_SEARCH_APPLICATION_DIR flag, and also the function name is exactly representing
+            // what we are expecting to happen.
+            else if ((LoadContext->Flags & LOAD_LIBRARY_SEARCH_APPLICATION_DIR) != 0)
+            {
+                Status = LdrpMapDllFullPath(LoadContext);
+            }
+            else
+            {
+                Status = LdrpMapDllSearchPath(LoadContext);
+            }
+            if (NT_SUCCESS(Status) || Status == STATUS_RETRY)
+                break;
+
+            // This part is for failed cases so we can ignore it.
+            Status = LdrpLogInternal("minkernel\\ntdll\\ldrmap.c", 0x7D2, "LdrpProcessWork", 0, "Unable to load DLL: \"%wZ\", Parent Module: \"%wZ\", Status: 0x%x\n", LoadContext, &LoadContext->Entry->FullDllName & (unsigned __int64)((unsigned __int128)-(__int128)(unsigned __int64)LoadContext->Entry >> 64), Status);
+            if (Status == STATUS_DLL_NOT_FOUND)
+            {
+                LdrpLogError(STATUS_DLL_NOT_FOUND, 25, 0, LoadContext);
+                LdrpLogDeprecatedDllEtwEvent(LoadContext);
+                //LdrpLogLoadFailureEtwEvent((DWORD)LoadContext,(DWORD(LoadContext->Entry) + 0x48) & ((unsigned __int128)-(__int128)(unsigned __int64)LoadContext->Entry >> 64),STATUS_DLL_NOT_FOUND,(unsigned int)&LoadFailure,0);
+                LdrpLogLoadFailureEtwEvent((PVOID)LoadContext, (PVOID)(((UINT_PTR)((LoadContext->Entry) + 0x48)) & ((UINT_PTR)(LoadContext->Entry) >> 64)), STATUS_DLL_NOT_FOUND, &LoadFailure, 0);
+                
+                PLDR_DATA_TABLE_ENTRY pLdrEntry = (PLDR_DATA_TABLE_ENTRY)LoadContext->WorkQueueListEntry.Flink;
+                if ((pLdrEntry->FlagGroup[0] & 0x20) != 0)
+                    Status = LdrpReportError(LoadContext, 0, STATUS_DLL_NOT_FOUND);
+            }
+        }
+        if (!NT_SUCCESS(Status))
+        {
+            *LoadContext->pStatus = Status;
+        }
+    } while (FALSE);
+
+    // We can ignore this either.
+    if (!One)
+    {
+        bool SetWorkCompleteEvent;
+
+        RtlEnterCriticalSection(&LdrpWorkQueueLock);
+        --LdrpWorkInProgress;
+        if (LdrpWorkQueue != (LIST_ENTRY*)&LdrpWorkQueue || (SetWorkCompleteEvent = 1, LdrpWorkInProgress != 1))
+            SetWorkCompleteEvent = FALSE;
+        Status = RtlLeaveCriticalSection(&LdrpWorkQueueLock);
+        if (SetWorkCompleteEvent)
+            Status = ZwSetEvent(LdrpWorkCompleteEvent, 0);
+    }
+
+    return Status;
+}
 ```
