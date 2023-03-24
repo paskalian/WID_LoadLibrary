@@ -1285,3 +1285,71 @@ NTSTATUS __fastcall LdrpProcessWork(LDRP_LOAD_CONTEXT* LoadContext, bool One)
     return Status;
 }
 ```
+Another road break, this is getting weirder.
+
+The most logical one to go on with in this case is LdrpMapDllFullPath.
+### LdrpMapDllFullPath (IDA Pseudocode)
+```cpp
+NTSTATUS __fastcall LdrpMapDllFullPath(LDRP_LOAD_CONTEXT *LoadContext)
+{
+  LDR_DATA_TABLE_ENTRY *LdrEntry; // r15
+  int Flags; // eax
+  NTSTATUS Status_2; // eax
+  int Status; // ebx
+  unsigned int HashedBaseDllName; // eax
+  __int64 v8; // [rsp+30h] [rbp-D0h] BYREF
+  UNICODE_STRING DllNameResolved; // [rsp+40h] [rbp-C0h] BYREF
+  WCHAR Buffer[128]; // [rsp+50h] [rbp-B0h] BYREF
+
+  LdrEntry = (LDR_DATA_TABLE_ENTRY *)LoadContext->WorkQueueListEntry.Flink;
+  DllNameResolved.Buffer = Buffer;
+  Flags = LoadContext->Flags;
+  v8 = 0i64;
+  *(_DWORD *)&DllNameResolved.Length = 0x1000000;
+  Buffer[0] = 0;
+  Status_2 = LdrpResolveDllName(LoadContext, &DllNameResolved, &LdrEntry->BaseDllName, &LdrEntry->FullDllName, Flags);
+  Status = Status_2;
+  if ( LoadContext[1].pSomeStruct )
+  {
+    if ( Status_2 < 0 )
+      goto RETURN;
+  }
+  else
+  {
+    Status = LdrpAppCompatRedirect(
+               LoadContext,
+               &LdrEntry->FullDllName,
+               &LdrEntry->BaseDllName,
+               &DllNameResolved,
+               Status_2);
+    if ( Status < 0 )
+      goto RETURN;
+    HashedBaseDllName = LdrpHashUnicodeString(&LdrEntry->BaseDllName);
+    LdrEntry->BaseNameHashValue = HashedBaseDllName;
+    LdrpFindExistingModule(
+      (_DWORD)LdrEntry + 0x58,
+      (_DWORD)LdrEntry + 0x48,
+      LoadContext->Flags,
+      HashedBaseDllName,
+      (__int64)&v8);
+    if ( v8 )
+    {
+      LdrpLoadContextReplaceModule(LoadContext);
+      goto RETURN;
+    }
+  }
+  Status = LdrpMapDllNtFileName(LoadContext, &DllNameResolved);
+  // STATUS_IMAGE_MACHINE_TYPE_MISMATCH (0x4000000E)
+  // STATUS_INVALID_IMAGE_FORMAT (0xC000007B)
+  if ( Status == 0x4000000E )
+    Status = 0xC000007B;
+RETURN:
+  if ( Buffer != DllNameResolved.Buffer )
+    NtdllpFreeStringRoutine(DllNameResolved.Buffer);
+  return Status;
+}
+```
+### LdrpMapDllFullPath (Simplified & Explained)
+```cpp
+// TO DO.
+```
