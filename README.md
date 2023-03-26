@@ -558,34 +558,19 @@ NTSTATUS __fastcall LdrLoadDll(PWSTR DllPath, PULONG pFlags, PUNICODE_STRING Dll
         }
         else
         {
-            // By default it takes up 0x78 bytes of space
-            // PUNICODE_STRING DllPathInited[15];
-
-            // Checked inside LdrpInitializeDllPath, zero initializes the first 0x80 bytes of the 3rd argument given (DllPathInited in this case)
-            // So this may cause undefined behaviour, decided to change the size to 16.
-
-            // Now it takes up exactly 0x80 bytes of space and shouldn't be causing any problems.
-            // Also changing it to 16 destroyed FalseBool so win win I guess.
-            PUNICODE_STRING DllPathInited[16];
-            LdrpInitializeDllPath(DllName->Buffer, DllPath, DllPathInited);
+            LDR_UNKSTRUCT DllPathInited;
+            // There's another LdrpLogInternal inside this function, gonna mess with that later on.
+            LdrpInitializeDllPath(DllName->Buffer, DllPath, &DllPathInited);
 
             LDR_DATA_TABLE_ENTRY* DllEntry;
-            Status = LdrpLoadDll(DllName, DllPathInited, FlagUsed, &DllEntry);
-            // (BY DEFAULT FalseBool WAS USED HERE) Even though I called it FalseBool, I am uncertain about the behaviour.
-            // if (FalseBool)
-
-            // Changing it to 16 got me into this guy, and I changed it again to be more understandable.
-            // if (BYTE4(DllPathInited[15]))
-            // In IDA's docs BYTEn ANDs the argument with n+1, [ BYTEn(arg) = (arg & n+1) ]
-
-            // IN BOTH CASES I HAVE NO IDEA WHAT'S GOING ON WITH THIS IF, I MUST DEBUG THIS FUNCTION FOR CLARITY.
-            if (((UINT_PTR)DllPathInited[15] & 5))
-                RtlReleasePath(DllPathInited[0]);
+            Status = fLdrpLoadDll(DllName, &DllPathInited, FlagUsed, &DllEntry);
+            if (DllPathInited.IsInitedMaybe)
+              RtlReleasePath(DllPathInited.pInitNameMaybe);
             if (NT_SUCCESS(Status))
             {
-                // Changes the actual return value and dereferences the module.
-                *BaseAddress = DllEntry->DllBase;
-                LdrpDereferenceModule(DllEntry);
+              // Changes the actual return value and dereferences the module.
+              *BaseAddress = DllEntry->DllBase;
+              LdrpDereferenceModule(DllEntry);
             }
         }
     }
