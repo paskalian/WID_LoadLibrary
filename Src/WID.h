@@ -8,11 +8,11 @@
 #include "Loader/Loader.h"
 
 #ifdef _DEBUG
-#define WID_DBG(x) x
+#define WID_DBG(x) { x }
 #else
 #define WID_DBG(x)
 #endif
-#define WID_HIDDEN(x) if(CreationInfo.LoadType == LOADTYPE::DEFAULT){x}
+#define WID_HIDDEN(x) { if(CreationInfo.LoadType == LOADTYPE::DEFAULT){x} }
 
 namespace WID
 {

@@ -1,8 +1,13 @@
 #include "NT.h"
 
 // Implemented.
-HANDLE* LdrpMainThreadToken = nullptr;
-DWORD* LdrInitState = nullptr;
+HANDLE*                 LdrpMainThreadToken     = nullptr;
+DWORD*                  LdrInitState            = nullptr;
+DWORD*                  LoadFailure             = nullptr;
+PRTL_CRITICAL_SECTION   LdrpWorkQueueLock       = nullptr;
+DWORD*                  LdrpWorkInProgress      = nullptr;
+LIST_ENTRY**            LdrpWorkQueue           = nullptr;
+PHANDLE                 LdrpWorkCompleteEvent   = nullptr;
 
 PEB* NtCurrentPeb()
 {
@@ -104,6 +109,9 @@ tRtlFreeHeap				    RtlFreeHeap					    = nullptr;
 tLdrGetDllPath				    LdrGetDllPath				    = nullptr;
 tRtlReleasePath				    RtlReleasePath				    = nullptr;
 tRtlInitUnicodeStringEx		    RtlInitUnicodeStringEx		    = nullptr;
+tRtlEnterCriticalSection	    RtlEnterCriticalSection         = nullptr;
+tRtlLeaveCriticalSection        RtlLeaveCriticalSection         = nullptr;
+tZwSetEvent                     ZwSetEvent                      = nullptr;
 tLdrpLogInternal			    LdrpLogInternal				    = nullptr;
 tLdrpInitializeDllPath		    LdrpInitializeDllPath		    = nullptr;
 tLdrpDereferenceModule		    LdrpDereferenceModule		    = nullptr;
@@ -124,3 +132,12 @@ tLdrpPinModule                  LdrpPinModule                   = nullptr;
 tLdrpApplyPatchImage            LdrpApplyPatchImage             = nullptr;
 tLdrpFreeLoadContextOfNode      LdrpFreeLoadContextOfNode       = nullptr;
 tLdrpDecrementModuleLoadCountEx LdrpDecrementModuleLoadCountEx  = nullptr;
+tLdrpLogError                   LdrpLogError                    = nullptr;
+tLdrpLogDeprecatedDllEtwEvent   LdrpLogDeprecatedDllEtwEvent    = nullptr;
+tLdrpLogLoadFailureEtwEvent     LdrpLogLoadFailureEtwEvent      = nullptr;
+tLdrpReportError                LdrpReportError                 = nullptr;
+tLdrpResolveDllName             LdrpResolveDllName              = nullptr;
+tLdrpAppCompatRedirect          LdrpAppCompatRedirect           = nullptr;
+tLdrpHashUnicodeString          LdrpHashUnicodeString           = nullptr;
+tLdrpFindExistingModule         LdrpFindExistingModule          = nullptr;
+tLdrpLoadContextReplaceModule   LdrpLoadContextReplaceModule    = nullptr;

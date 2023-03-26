@@ -81,6 +81,14 @@ namespace WID
 			NTSTATUS __fastcall fLdrpLoadDllInternal(PUNICODE_STRING FullPath, LDR_UNKSTRUCT* DllPathInited, ULONG Flags, ULONG LdrFlags, PLDR_DATA_TABLE_ENTRY LdrEntry, PLDR_DATA_TABLE_ENTRY LdrEntry2, PLDR_DATA_TABLE_ENTRY* DllEntry, NTSTATUS* pStatus, ULONGLONG Zero);
 
 			NTSTATUS __fastcall fLdrpProcessWork(PLDRP_LOAD_CONTEXT LoadContext, BOOLEAN Unknown);
+			NTSTATUS __fastcall fLdrpSnapModule(PLDRP_LOAD_CONTEXT LoadContext);
+			NTSTATUS __fastcall fLdrpMapDllRetry(PLDRP_LOAD_CONTEXT LoadContext);
+			NTSTATUS __fastcall fLdrpMapDllFullPath(PLDRP_LOAD_CONTEXT LoadContext);
+			NTSTATUS __fastcall fLdrpMapDllSearchPath(PLDRP_LOAD_CONTEXT LoadContext);
+			NTSTATUS __fastcall fLdrpMapDllNtFileName(PLDRP_LOAD_CONTEXT LoadContext, PUNICODE_STRING DllNameResolved);
+		
+
+
 			NTSTATUS __fastcall fLdrpPrepareModuleForExecution(PLDR_DATA_TABLE_ENTRY LdrEntry, NTSTATUS* pStatus);
 
 			NTSTATUS __fastcall fBasepLoadLibraryAsDataFileInternal(PUNICODE_STRING DllName, PWSTR Path, PWSTR Unknown, DWORD dwFlags, HMODULE* pBaseOfLoadedModule);

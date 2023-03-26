@@ -596,10 +596,164 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpLoadDllInternal(PUNICODE_STRING FullPath, 
 
 NTSTATUS __fastcall LOADLIBRARY::fLdrpProcessWork(PLDRP_LOAD_CONTEXT LoadContext, BOOLEAN Unknown)
 {
+	NTSTATUS Status;
+
+	// Converted goto to do-while loop.
+	do
+	{
+		Status = *LoadContext->pStatus;
+		if (!NT_SUCCESS(Status))
+			break;
+
+		// Caused most likely because CONTAINING_RECORD macro was used, I have no idea what's going on.
+		// Also the structure used (LDRP_LOAD_CONTEXT) isn't documented, that's what I've got out of it so far.
+		if ((DWORD)LoadContext->WorkQueueListEntry.Flink[9].Blink[3].Blink)
+		{
+			Status = fLdrpSnapModule(LoadContext);
+		}
+		else
+		{
+			if ((LoadContext->Flags & 0x100000) != 0)
+			{
+				Status = fLdrpMapDllRetry(LoadContext);
+			}
+			// We will continue from here since we have the LOAD_LIBRARY_SEARCH_APPLICATION_DIR flag, and also the function name is exactly representing
+			// what we are expecting to happen.
+			else if ((LoadContext->Flags & LOAD_LIBRARY_SEARCH_APPLICATION_DIR) != 0)
+			{
+				Status = fLdrpMapDllFullPath(LoadContext);
+			}
+			else
+			{
+				Status = fLdrpMapDllSearchPath(LoadContext);
+			}
+			if (NT_SUCCESS(Status) || Status == STATUS_RETRY)
+				break;
+
+			//Status = LdrpLogInternal("minkernel\\ntdll\\ldrmap.c", 0x7D2, "LdrpProcessWork", 0, "Unable to load DLL: \"%wZ\", Parent Module: \"%wZ\", Status: 0x%x\n", LoadContext, &LoadContext->Entry->FullDllName & (unsigned __int64)((unsigned __int128)-(__int128)(unsigned __int64)LoadContext->Entry >> 64), Status);
+			WID_HIDDEN( Status = LdrpLogInternal("minkernel\\ntdll\\ldrmap.c", 0x7D2, "LdrpProcessWork", 0, "Unable to load DLL: \"%wZ\", Parent Module: \"%wZ\", Status: 0x%x\n", LoadContext, ((UINT_PTR)&LoadContext->Entry->FullDllName & (UINT_PTR)LoadContext->Entry >> 64), Status); )
+			// This part is for failed cases so we can ignore it.
+			if (Status == STATUS_DLL_NOT_FOUND)
+			{
+				WID_HIDDEN( LdrpLogError(STATUS_DLL_NOT_FOUND, 0x19, 0, LoadContext); )
+				WID_HIDDEN( LdrpLogDeprecatedDllEtwEvent(LoadContext); )
+				//LdrpLogLoadFailureEtwEvent((DWORD)LoadContext,(DWORD(LoadContext->Entry) + 0x48) & ((unsigned __int128)-(__int128)(unsigned __int64)LoadContext->Entry >> 64),STATUS_DLL_NOT_FOUND,(unsigned int)&LoadFailure,0);
+				WID_HIDDEN( LdrpLogLoadFailureEtwEvent((PVOID)LoadContext, (PVOID)(((UINT_PTR)(LoadContext->Entry->EntryPointActivationContext) & ((UINT_PTR)(LoadContext->Entry) >> 64))), STATUS_DLL_NOT_FOUND, LoadFailure, 0); )
+
+				PLDR_DATA_TABLE_ENTRY pLdrEntry = (PLDR_DATA_TABLE_ENTRY)LoadContext->WorkQueueListEntry.Flink;
+				if ((pLdrEntry->FlagGroup[0] & ProcessStaticImport) != 0)
+				{
+					WID_HIDDEN( Status = LdrpReportError(LoadContext, 0, STATUS_DLL_NOT_FOUND); )
+				}
+			}
+		}
+		if (!NT_SUCCESS(Status))
+		{
+			*LoadContext->pStatus = Status;
+		}
+	} while (FALSE);
+
+	// We can ignore this either.
+	if (!Unknown)
+	{
+		bool SetWorkCompleteEvent;
+
+		//RtlEnterCriticalSection(&LdrpWorkQueueLock);
+		RtlEnterCriticalSection(LdrpWorkQueueLock);
+		--(*LdrpWorkInProgress);
+		if (*LdrpWorkQueue != (LIST_ENTRY*)LdrpWorkQueue || (SetWorkCompleteEvent = 1, *LdrpWorkInProgress != 1))
+			SetWorkCompleteEvent = FALSE;
+		//Status = RtlLeaveCriticalSection(&LdrpWorkQueueLock);
+		Status = RtlLeaveCriticalSection(LdrpWorkQueueLock);
+		if (SetWorkCompleteEvent)
+			Status = ZwSetEvent(*LdrpWorkCompleteEvent, 0);
+	}
+
+	return Status;
+}
+
+NTSTATUS __fastcall LOADLIBRARY::fLdrpSnapModule(PLDRP_LOAD_CONTEXT LoadContext)
+{
 	// TO DO.
 
 	return STATUS_SUCCESS;
 }
+
+NTSTATUS __fastcall LOADLIBRARY::fLdrpMapDllRetry(PLDRP_LOAD_CONTEXT LoadContext)
+{
+	// TO DO.
+
+	return STATUS_SUCCESS;
+}
+
+NTSTATUS __fastcall LOADLIBRARY::fLdrpMapDllFullPath(PLDRP_LOAD_CONTEXT LoadContext)
+{
+	NTSTATUS Status;
+	
+	LDR_DATA_TABLE_ENTRY* LdrEntry = (LDR_DATA_TABLE_ENTRY*)LoadContext->WorkQueueListEntry.Flink;
+
+	UNICODE_STRING DllNameResolved;
+
+	WCHAR Buffer[128];
+	DllNameResolved.Length = 0x1000000;
+	DllNameResolved.MaximumLength = 0x1000000;
+	DllNameResolved.Buffer = Buffer;
+	Buffer[0] = 0;
+
+	DWORD Flags = LoadContext->Flags;
+	Status = LdrpResolveDllName(LoadContext, &DllNameResolved, &LdrEntry->BaseDllName, &LdrEntry->FullDllName, Flags);
+	do
+	{
+		if (LoadContext->UnknownPtr)
+		{
+			if (!NT_SUCCESS(Status))
+				break;
+		}
+		else
+		{
+			Status = LdrpAppCompatRedirect(LoadContext, &LdrEntry->FullDllName, &LdrEntry->BaseDllName, &DllNameResolved, Status);
+			if (!NT_SUCCESS(Status))
+				break;
+
+			// Hashes the dll name
+			DWORD BaseDllNameHash = LdrpHashUnicodeString(&LdrEntry->BaseDllName);
+			LdrEntry->BaseNameHashValue = BaseDllNameHash;
+
+			LDR_DATA_TABLE_ENTRY* LoadedDll = nullptr;
+			LdrpFindExistingModule(&LdrEntry->BaseDllName, &LdrEntry->FullDllName, LoadContext->Flags, BaseDllNameHash, &LoadedDll);
+			if (LoadedDll)
+			{
+				LdrpLoadContextReplaceModule(LoadContext, LoadedDll);
+				break;
+			}
+		}
+
+		Status = fLdrpMapDllNtFileName(LoadContext, &DllNameResolved);
+		if (Status == STATUS_IMAGE_MACHINE_TYPE_MISMATCH)
+			Status = STATUS_INVALID_IMAGE_FORMAT;
+	} while (FALSE);
+
+	if (Buffer != DllNameResolved.Buffer)
+		NtdllpFreeStringRoutine(DllNameResolved.Buffer);
+
+	return Status;
+}
+
+NTSTATUS __fastcall LOADLIBRARY::fLdrpMapDllSearchPath(PLDRP_LOAD_CONTEXT LoadContext)
+{
+	// TO DO.
+
+	return STATUS_SUCCESS;
+}
+
+NTSTATUS __fastcall LOADLIBRARY::fLdrpMapDllNtFileName(PLDRP_LOAD_CONTEXT LoadContext, PUNICODE_STRING DllNameResolved)
+{
+	// TO DO.
+
+	return STATUS_SUCCESS;
+}
+
+
 
 NTSTATUS __fastcall LOADLIBRARY::fLdrpPrepareModuleForExecution(PLDR_DATA_TABLE_ENTRY LdrEntry, NTSTATUS* pStatus)
 {
@@ -607,6 +761,7 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpPrepareModuleForExecution(PLDR_DATA_TABLE_
 
 	return STATUS_SUCCESS;
 }
+
 
 NTSTATUS __fastcall LOADLIBRARY::fBasepLoadLibraryAsDataFileInternal(PUNICODE_STRING DllName, PWSTR Path, PWSTR Unknown, DWORD dwFlags, HMODULE* pBaseOfLoadedModule)
 {

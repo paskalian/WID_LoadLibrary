@@ -561,7 +561,7 @@ typedef struct _LDRP_LOAD_CONTEXT
     UNICODE_STRING BaseDllName;
     LDR_UNKSTRUCT* UnkStruct;
     ULONG Unknown;
-    __declspec(align(8)) DWORD Flags;
+    __int64 Flags;
     NTSTATUS* pStatus;
     LDR_DATA_TABLE_ENTRY* Entry;
     _LIST_ENTRY WorkQueueListEntry;
@@ -578,8 +578,9 @@ typedef struct _LDRP_LOAD_CONTEXT
     PVOID GuardCFCheckFunctionPointer;
     __int64 GuardFlags;
     __int64 DllNameLenCompare;
-    char Pad0[24];
+    char Pad0[16];
+    __int64 UnknownPtr;
     __int64 Handle;
     char Pad1[8];
     wchar_t BaseDllNameBuffer[260];
-} LDRP_LOAD_CONTEXT, * PLDRP_LOAD_CONTEXT;
+} LDRP_LOAD_CONTEXT, *PLDRP_LOAD_CONTEXT;
