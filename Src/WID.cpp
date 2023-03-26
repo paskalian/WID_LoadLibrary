@@ -28,14 +28,13 @@ NTSTATUS WID::Init()
 		(BaseSetLastNTError						= (tBaseSetLastNTError)GetProcAddress(Kernel32Module, "BaseSetLastNTError")											,assert(BaseSetLastNTError));
 
 		// NTDLL
-		(LdrpMainThreadToken					= (HANDLE*)							(NtdllModule + 0x1842C8)								,assert(LdrpMainThreadToken));
-		(LdrInitState							= (DWORD*)							(NtdllModule + 0x185220)								,assert(LdrInitState));
+		(LdrpMainThreadToken					= (HANDLE*)							((PCHAR)NtdllModule + 0x1842C8)							,assert(LdrpMainThreadToken));
+		(LdrInitState							= (DWORD*)							((PCHAR)NtdllModule + 0x185220)							,assert(LdrInitState));
 
 		(NtOpenThreadToken						= (tNtOpenThreadToken)				GetProcAddress(NtdllModule, "NtOpenThreadToken")		,assert(NtOpenThreadToken));
 		(NtClose								= (tNtClose)						GetProcAddress(NtdllModule, "NtClose")					,assert(NtClose));
 		(RtlAllocateHeap						= (tRtlAllocateHeap)				GetProcAddress(NtdllModule, "RtlAllocateHeap")			,assert(RtlAllocateHeap));
 		(RtlFreeHeap							= (tRtlFreeHeap)					GetProcAddress(NtdllModule, "RtlFreeHeap")				,assert(RtlFreeHeap));
-		(RtlFreeUnicodeString					= (tRtlFreeUnicodeString)			GetProcAddress(NtdllModule, "RtlFreeUnicodeString")		,assert(RtlFreeUnicodeString));
 		(LdrGetDllPath							= (tLdrGetDllPath)					GetProcAddress(NtdllModule, "LdrGetDllPath")			,assert(LdrGetDllPath));
 		(RtlReleasePath							= (tRtlReleasePath)					GetProcAddress(NtdllModule, "RtlReleasePath")			,assert(RtlReleasePath));
 		(RtlInitUnicodeStringEx					= (tRtlInitUnicodeStringEx)			GetProcAddress(NtdllModule, "RtlInitUnicodeStringEx")	,assert(RtlInitUnicodeStringEx));

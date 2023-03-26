@@ -22,6 +22,7 @@ extern DWORD* LdrInitState;
 
 PEB* NtCurrentPeb();
 VOID __fastcall NtdllpFreeStringRoutine(PWCH Buffer);
+VOID __fastcall RtlFreeUnicodeString(PUNICODE_STRING UnicodeString);
 VOID __fastcall LdrpFreeUnicodeString(PUNICODE_STRING String);
 //NTSTATUS __fastcall LdrpThreadTokenSetMainThreadToken();
 
@@ -37,9 +38,6 @@ extern	tRtlAllocateHeap RtlAllocateHeap;
 
 typedef BOOLEAN(__fastcall* tRtlFreeHeap)(IN PVOID HeapHandle, IN OPTIONAL ULONG Flags, _Frees_ptr_opt_ PVOID BaseAddress);
 extern	tRtlFreeHeap RtlFreeHeap;
-
-typedef VOID(__fastcall* tRtlFreeUnicodeString)(IN OUT PUNICODE_STRING UnicodeString);
-extern	tRtlFreeUnicodeString RtlFreeUnicodeString;
 
 typedef NTSTATUS(__fastcall* tLdrGetDllPath)(PWCH DllName, DWORD dwFlags, PWSTR* Path, PWSTR* Unknown);
 extern	tLdrGetDllPath LdrGetDllPath;
@@ -67,7 +65,7 @@ typedef NTSTATUS(__fastcall* tLdrpLogDllState)(ULONG, PUNICODE_STRING, ULONG);
 extern	tLdrpLogDllState LdrpLogDllState;
 
 #define LDRP_PREPROCESS_DLLNAME_PATTERN "\x4C\x8B\xDC\x49\x89\x5B\x08\x49\x89\x6B\x10\x49\x89\x73\x18\x57\x41\x54\x41\x55\x41\x56\x41\x57\x48\x83\xEC\x40"
-typedef NTSTATUS(__fastcall* tLdrpPreprocessDllName)(PUNICODE_STRING DllName, PUNICODE_STRING ResName, ULONG Zero, PULONG pFlags);
+typedef NTSTATUS(__fastcall* tLdrpPreprocessDllName)(PUNICODE_STRING DllName, PUNICODE_STRING ResName, PULONG pZero, PULONG pFlags);
 extern	tLdrpPreprocessDllName LdrpPreprocessDllName;
 
 #define LDRP_FASTPTH_RELOADED_DLL_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x74\x24\x18\x57\x48\x83\xEC\x30\x83\x64\x24\x48\x00"

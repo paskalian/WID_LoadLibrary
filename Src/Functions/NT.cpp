@@ -2,7 +2,7 @@
 
 // Implemented.
 HANDLE* LdrpMainThreadToken = nullptr;
-DWORD* LdrInitState;
+DWORD* LdrInitState = nullptr;
 
 PEB* NtCurrentPeb()
 {
@@ -12,6 +12,19 @@ PEB* NtCurrentPeb()
 VOID __fastcall NtdllpFreeStringRoutine(PWCH Buffer)
 {
 	RtlFreeHeap(NtCurrentPeb()->ProcessHeap, 0, Buffer);
+}
+
+VOID __fastcall RtlFreeUnicodeString(PUNICODE_STRING UnicodeString)
+{
+    WCHAR* Buffer; // rcx
+
+    Buffer = UnicodeString->Buffer;
+    if (Buffer)
+    {
+        NtdllpFreeStringRoutine(Buffer);
+        //*UnicodeString = 0;
+        memset(UnicodeString, 0, sizeof(UNICODE_STRING));
+    }
 }
 
 VOID __fastcall LdrpFreeUnicodeString(PUNICODE_STRING String)
@@ -32,8 +45,8 @@ NTSTATUS __fastcall WID::Loader::LOADLIBRARY::LdrpThreadTokenSetMainThreadToken(
 {
     NTSTATUS Status;
     
-    HANDLE ReturnToken = nullptr;
-    Status = NtOpenThreadToken((HANDLE)-2u, 0x2001C, 0, &ReturnToken);
+    HANDLE ReturnToken = NULL;
+    Status = NtOpenThreadToken((HANDLE)-2, 0x2001C, 0, &ReturnToken);
     *LdrpMainThreadToken = ReturnToken;
     if (Status != STATUS_NO_TOKEN)
     {
@@ -88,7 +101,6 @@ tNtOpenThreadToken              NtOpenThreadToken               = nullptr;
 tNtClose                        NtClose                         = nullptr;
 tRtlAllocateHeap			    RtlAllocateHeap				    = nullptr;
 tRtlFreeHeap				    RtlFreeHeap					    = nullptr;
-tRtlFreeUnicodeString		    RtlFreeUnicodeString		    = nullptr;
 tLdrGetDllPath				    LdrGetDllPath				    = nullptr;
 tRtlReleasePath				    RtlReleasePath				    = nullptr;
 tRtlInitUnicodeStringEx		    RtlInitUnicodeStringEx		    = nullptr;

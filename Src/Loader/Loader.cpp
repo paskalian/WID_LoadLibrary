@@ -341,18 +341,27 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpLoadDll(PUNICODE_STRING DllName, LDR_UNKST
 
 	// Creates a new unicode_string and allocates it some buffer.
 	UNICODE_STRING FullDllPath;
-	WCHAR Buffer[128];
+	//WCHAR Buffer[128];
 	// Sets the according members.
-	FullDllPath.Length = 0x1000000;
+	//FullDllPath.Length = 0x1000000;
+	//FullDllPath.Buffer = Buffer;
+	//Buffer[0] = 0;
+
+	// Might not be what's done actually. Works though.
+	WCHAR Buffer[MAX_PATH];
+	wcscpy(Buffer, DllName->Buffer);
+
+	FullDllPath.Length = MAX_PATH;
+	FullDllPath.MaximumLength = MAX_PATH + 1;
 	FullDllPath.Buffer = Buffer;
-	Buffer[0] = 0;
 	 
 	// Returns the Absolute path
 	// If a non-relative path was given then the flags will be ORed with LOAD_LIBRARY_SEARCH_APPLICATION_DIR (0x200) | LOAD_LIBRARY_SEARCH_USER_DIRS (0x400)
 	// resulting in the MOST FLAGS being:
 	// CNVTD_DONT_RESOLVE_DLL_REFERENCES (0x2) | LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE (0x40) | LOAD_LIBRARY_REQUIRE_SIGNED_TARGET (0x80) |
 	// LOAD_LIBRARY_SEARCH_APPLICATION_DIR (0x200) | LOAD_LIBRARY_SEARCH_USER_DIRS (0x400)
-	Status = LdrpPreprocessDllName(DllName, &FullDllPath, 0, &Flags);
+	ULONG Zero = 0;
+	Status = LdrpPreprocessDllName(DllName, &FullDllPath, &Zero, &Flags);
 
 	if (NT_SUCCESS(Status))
 		// A even deeper function, by far we can see Windows is kinda all *wrapped* around each other.
