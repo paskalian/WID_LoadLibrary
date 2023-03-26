@@ -38,6 +38,7 @@
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
     <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>NotSet</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -98,6 +99,19 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Src\Functions\KERNEL32.cpp" />
+    <ClCompile Include="Src\Loader\Loader.cpp" />
+    <ClCompile Include="Src\Main.cpp" />
+    <ClCompile Include="Src\Functions\NT.cpp" />
+    <ClCompile Include="Src\WID.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Src\Functions\KERNEL32.h" />
+    <ClInclude Include="Src\Includes.h" />
+    <ClInclude Include="Src\Loader\Loader.h" />
+    <ClInclude Include="Src\Functions\NT.h" />
+    <ClInclude Include="Src\Functions\Undocumented.h" />
+    <ClInclude Include="Src\WID.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
