@@ -258,11 +258,171 @@ typedef struct _LDR_DATA_TABLE_ENTRY
     LDR_HOT_PATCH_STATE HotPatchState;
 } LDR_DATA_TABLE_ENTRY, * PLDR_DATA_TABLE_ENTRY;
 
+#define PROCESSOR_FEATURE_MAX 64
+
+typedef struct _KSYSTEM_TIME
+{
+    ULONG LowPart;
+    LONG High1Time;
+    LONG High2Time;
+} KSYSTEM_TIME, * PKSYSTEM_TIME;
+
+typedef enum _NT_PRODUCT_TYPE
+{
+    NtProductWinNt = 1,
+    NtProductLanManNt = 2,
+    NtProductServer = 3
+} NT_PRODUCT_TYPE;
+
+typedef enum _ALTERNATIVE_ARCHITECTURE_TYPE
+{
+    StandardDesign = 0,
+    NEC98x86 = 1,
+    EndAlternatives = 2
+} ALTERNATIVE_ARCHITECTURE_TYPE;
+
+typedef struct _KUSER_SHARED_DATA {
+    ULONG                         TickCountLowDeprecated;
+    ULONG                         TickCountMultiplier;
+    KSYSTEM_TIME                  InterruptTime;
+    KSYSTEM_TIME                  SystemTime;
+    KSYSTEM_TIME                  TimeZoneBias;
+    USHORT                        ImageNumberLow;
+    USHORT                        ImageNumberHigh;
+    WCHAR                         NtSystemRoot[260];
+    ULONG                         MaxStackTraceDepth;
+    ULONG                         CryptoExponent;
+    ULONG                         TimeZoneId;
+    ULONG                         LargePageMinimum;
+    ULONG                         AitSamplingValue;
+    ULONG                         AppCompatFlag;
+    ULONGLONG                     RNGSeedVersion;
+    ULONG                         GlobalValidationRunlevel;
+    LONG                          TimeZoneBiasStamp;
+    ULONG                         NtBuildNumber;
+    NT_PRODUCT_TYPE               NtProductType;
+    BOOLEAN                       ProductTypeIsValid;
+    BOOLEAN                       Reserved0[1];
+    USHORT                        NativeProcessorArchitecture;
+    ULONG                         NtMajorVersion;
+    ULONG                         NtMinorVersion;
+    BOOLEAN                       ProcessorFeatures[PROCESSOR_FEATURE_MAX];
+    ULONG                         Reserved1;
+    ULONG                         Reserved3;
+    ULONG                         TimeSlip;
+    ALTERNATIVE_ARCHITECTURE_TYPE AlternativeArchitecture;
+    ULONG                         BootId;
+    LARGE_INTEGER                 SystemExpirationDate;
+    ULONG                         SuiteMask;
+    BOOLEAN                       KdDebuggerEnabled;
+    union {
+        UCHAR MitigationPolicies;
+        struct {
+            UCHAR NXSupportPolicy : 2;
+            UCHAR SEHValidationPolicy : 2;
+            UCHAR CurDirDevicesSkippedForDlls : 2;
+            UCHAR Reserved : 2;
+        };
+    };
+    USHORT                        CyclesPerYield;
+    ULONG                         ActiveConsoleId;
+    ULONG                         DismountCount;
+    ULONG                         ComPlusPackage;
+    ULONG                         LastSystemRITEventTickCount;
+    ULONG                         NumberOfPhysicalPages;
+    BOOLEAN                       SafeBootMode;
+    union {
+        UCHAR VirtualizationFlags;
+        struct {
+            UCHAR ArchStartedInEl2 : 1;
+            UCHAR QcSlIsSupported : 1;
+        };
+    };
+    UCHAR                         Reserved12[2];
+    union {
+        ULONG SharedDataFlags;
+        struct {
+            ULONG DbgErrorPortPresent : 1;
+            ULONG DbgElevationEnabled : 1;
+            ULONG DbgVirtEnabled : 1;
+            ULONG DbgInstallerDetectEnabled : 1;
+            ULONG DbgLkgEnabled : 1;
+            ULONG DbgDynProcessorEnabled : 1;
+            ULONG DbgConsoleBrokerEnabled : 1;
+            ULONG DbgSecureBootEnabled : 1;
+            ULONG DbgMultiSessionSku : 1;
+            ULONG DbgMultiUsersInSessionSku : 1;
+            ULONG DbgStateSeparationEnabled : 1;
+            ULONG SpareBits : 21;
+        } DUMMYSTRUCTNAME2;
+    } DUMMYUNIONNAME2;
+    ULONG                         DataFlagsPad[1];
+    ULONGLONG                     TestRetInstruction;
+    LONGLONG                      QpcFrequency;
+    ULONG                         SystemCall;
+    ULONG                         Reserved2;
+    ULONGLONG                     SystemCallPad[2];
+    union {
+        KSYSTEM_TIME TickCount;
+        ULONG64      TickCountQuad;
+        struct {
+            ULONG ReservedTickCountOverlay[3];
+            ULONG TickCountPad[1];
+        } DUMMYSTRUCTNAME;
+    } DUMMYUNIONNAME3;
+    ULONG                         Cookie;
+    ULONG                         CookiePad[1];
+    LONGLONG                      ConsoleSessionForegroundProcessId;
+    ULONGLONG                     TimeUpdateLock;
+    ULONGLONG                     BaselineSystemTimeQpc;
+    ULONGLONG                     BaselineInterruptTimeQpc;
+    ULONGLONG                     QpcSystemTimeIncrement;
+    ULONGLONG                     QpcInterruptTimeIncrement;
+    UCHAR                         QpcSystemTimeIncrementShift;
+    UCHAR                         QpcInterruptTimeIncrementShift;
+    USHORT                        UnparkedProcessorCount;
+    ULONG                         EnclaveFeatureMask[4];
+    ULONG                         TelemetryCoverageRound;
+    USHORT                        UserModeGlobalLogger[16];
+    ULONG                         ImageFileExecutionOptions;
+    ULONG                         LangGenerationCount;
+    ULONGLONG                     Reserved4;
+    ULONGLONG                     InterruptTimeBias;
+    ULONGLONG                     QpcBias;
+    ULONG                         ActiveProcessorCount;
+    UCHAR                         ActiveGroupCount;
+    UCHAR                         Reserved9;
+    union {
+        USHORT QpcData;
+        struct {
+            UCHAR QpcBypassEnabled;
+            UCHAR QpcShift;
+        };
+    };
+    LARGE_INTEGER                 TimeZoneBiasEffectiveStart;
+    LARGE_INTEGER                 TimeZoneBiasEffectiveEnd;
+    XSTATE_CONFIGURATION          XState;
+    KSYSTEM_TIME                  FeatureConfigurationChangeStamp;
+    ULONG                         Spare;
+    ULONG64                       UserPointerAuthMask;
+} KUSER_SHARED_DATA, * PKUSER_SHARED_DATA;
+
+enum DRAIN_TASK
+{
+    WaitLoadComplete = 0,
+    WaitWorkComplete
+};
+
 typedef struct _PEB {
     BYTE                         InheritedAddressSpace;
     BYTE                         ReadImageFileExecOptions;
     BYTE                         BeingDebugged;
-    BYTE                         _SYSTEM_DEPENDENT_01;
+    union {
+        UCHAR BitField;
+        struct {
+            /*  bit fields, follow link  */
+        };
+    };
 
     LPVOID                       Mutant;
     LPVOID                       ImageBaseAddress;
@@ -286,7 +446,7 @@ typedef struct _PEB {
     LPVOID                       TlsBitmap;
     DWORD                        TlsBitmapBits[2];
     LPVOID                       ReadOnlySharedMemoryBase;
-    LPVOID                       _SYSTEM_DEPENDENT_07;
+    KUSER_SHARED_DATA*           SharedData;
     LPVOID                       ReadOnlyStaticServerData;
     LPVOID                       AnsiCodePageData;
     LPVOID                       OemCodePageData;
@@ -341,8 +501,69 @@ typedef struct _PEB {
     LPVOID                       SystemDefaultActivationContextData;
     LPVOID                       SystemAssemblyStorageMap;
     LPVOID                       MinimumStackCommit;
+
+    //Appended for Windows Server 2003
+    PVOID SparePointers[4];
+    LIST_ENTRY FlsListHead;
+    PVOID FlsBitmap;
+    ULONG SpareUlongs[5];
+    ULONG FlsHighIndex;
+
+    //Appended for Windows Vista
+    PVOID WerRegistrationData;
+    PVOID WerShipAssertPtr;
+
+    //Appended for Windows 7
+    PVOID pUnused;
+    PVOID pImageHeaderHash;
+    union {
+        ULONG TracingFlags;
+        struct {
+            /*  bit fields, follow link  */
+        };
+    };
 } PEB, * PPEB;
 
+typedef struct _OBJECT_ATTRIBUTES {
+    ULONG           Length;
+    HANDLE          RootDirectory;
+    PUNICODE_STRING ObjectName;
+    ULONG           Attributes;
+    PVOID           SecurityDescriptor;
+    PVOID           SecurityQualityOfService;
+} OBJECT_ATTRIBUTES;
+
+enum HARDERROR_RESPONSE_OPTION
+{
+    OptionAbortRetryIgnore = 0x0,
+    OptionOk = 0x1,
+    OptionOkCancel = 0x2,
+    OptionRetryCancel = 0x3,
+    OptionYesNo = 0x4,
+    OptionYesNoCancel = 0x5,
+    OptionShutdownSystem = 0x6,
+};
+
+enum HARDERROR_RESPONSE
+{
+    ResponseReturnToCaller = 0x0,
+    ResponseNotHandled = 0x1,
+    ResponseAbort = 0x2,
+    ResponseCancel = 0x3,
+    ResponseIgnore = 0x4,
+    ResponseNo = 0x5,
+    ResponseOk = 0x6,
+    ResponseRetry = 0x7,
+    ResponseYes = 0x8,
+};
+
+typedef struct _IO_STATUS_BLOCK {
+    union {
+        NTSTATUS Status;
+        PVOID    Pointer;
+    };
+    ULONG_PTR Information;
+} IO_STATUS_BLOCK, * PIO_STATUS_BLOCK;
 
 typedef struct _CLIENT_ID {
     HANDLE UniqueProcess;
@@ -556,11 +777,17 @@ struct LDR_UNKSTRUCT
     char Pad2[3];
 };
 
+struct LDR_UNKSTRUCT2
+{
+    PUNICODE_STRING Name;
+    UINT64 Status;
+};
+
 typedef struct _LDRP_LOAD_CONTEXT
 {
     UNICODE_STRING BaseDllName;
     LDR_UNKSTRUCT* UnkStruct;
-    ULONG Unknown;
+    HANDLE SectionHandle;
     __int64 Flags;
     NTSTATUS* pStatus;
     LDR_DATA_TABLE_ENTRY* Entry;
@@ -580,7 +807,13 @@ typedef struct _LDRP_LOAD_CONTEXT
     __int64 DllNameLenCompare;
     char Pad0[16];
     __int64 UnknownPtr;
-    __int64 Handle;
+    HANDLE FileHandle;
     char Pad1[8];
     wchar_t BaseDllNameBuffer[260];
 } LDRP_LOAD_CONTEXT, *PLDRP_LOAD_CONTEXT;
+
+struct LDRP_FILENAME_BUFFER
+{
+    UNICODE_STRING pFileName;
+    wchar_t FileName[128]{};
+};

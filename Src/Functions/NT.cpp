@@ -1,13 +1,19 @@
 #include "NT.h"
 
 // Implemented.
-HANDLE*                 LdrpMainThreadToken     = nullptr;
-DWORD*                  LdrInitState            = nullptr;
-DWORD*                  LoadFailure             = nullptr;
-PRTL_CRITICAL_SECTION   LdrpWorkQueueLock       = nullptr;
-DWORD*                  LdrpWorkInProgress      = nullptr;
-LIST_ENTRY**            LdrpWorkQueue           = nullptr;
-PHANDLE                 LdrpWorkCompleteEvent   = nullptr;
+HANDLE*                 LdrpMainThreadToken             = nullptr;
+DWORD*                  LdrInitState                    = nullptr;
+DWORD*                  LoadFailure                     = nullptr;
+PRTL_CRITICAL_SECTION   LdrpWorkQueueLock               = nullptr;
+DWORD*                  LdrpWorkInProgress              = nullptr;
+LIST_ENTRY**            LdrpWorkQueue                   = nullptr;
+PHANDLE                 LdrpWorkCompleteEvent           = nullptr;
+KUSER_SHARED_DATA*      kUserSharedData                 = (KUSER_SHARED_DATA*)0x7FFE0000;
+DWORD*                  LdrpUseImpersonatedDeviceMap    = nullptr;
+DWORD*                  LdrpAuditIntegrityContinuity    = nullptr;
+DWORD*                  LdrpEnforceIntegrityContinuity  = nullptr;
+DWORD*                  LdrpFatalHardErrorCount         = nullptr;
+DWORD*                  UseWOW64                        = nullptr;
 
 PEB* NtCurrentPeb()
 {
@@ -46,6 +52,44 @@ VOID __fastcall LdrpFreeUnicodeString(PUNICODE_STRING String)
     String->MaximumLength = 0;
 }
 
+ULONG __fastcall RtlGetCurrentServiceSessionId(VOID)
+{
+    KUSER_SHARED_DATA* SharedData; // rax
+
+    SharedData = NtCurrentPeb()->SharedData;
+
+    // I highly doubt it's TickCountLowDeprecated but anyways.
+    if (SharedData)
+        SharedData = (KUSER_SHARED_DATA*)SharedData->TickCountLowDeprecated;
+    return (ULONG)SharedData;
+}
+
+USHORT __fastcall LdrpGetBaseNameFromFullName(PUNICODE_STRING BaseName, PUNICODE_STRING FullName)
+{
+    USHORT StrLen = BaseName->Length >> 1;
+    if (StrLen)
+    {
+        PWCHAR Buffer = BaseName->Buffer;
+        do
+        {
+            if (Buffer[StrLen - 1] == '\\')
+                break;
+            if (Buffer[StrLen - 1] == '/')
+                break;
+            --StrLen;
+        } while (StrLen);
+    }
+
+    USHORT ByteLen = 2 * StrLen;
+
+    USHORT Return = BaseName->MaximumLength - ByteLen;
+    FullName->Length = BaseName->Length - ByteLen;
+    FullName->MaximumLength = Return;
+    FullName->Buffer = &BaseName->Buffer[StrLen];
+    return Return;
+}
+
+// Implemented inside LOADLIBRARY class to use WID_HIDDEN
 NTSTATUS __fastcall WID::Loader::LOADLIBRARY::LdrpThreadTokenSetMainThreadToken()
 {
     NTSTATUS Status;
@@ -101,43 +145,148 @@ NTSTATUS __fastcall WID::Loader::LOADLIBRARY::LdrpFreeReplacedModule(LDR_DATA_TA
     return LdrpDereferenceModule(LdrDataTableEntry);
 }
 
+NTSTATUS __fastcall WID::Loader::LOADLIBRARY::LdrpResolveDllName(LDRP_LOAD_CONTEXT* LoadContext, LDRP_FILENAME_BUFFER* FileNameBuffer, PUNICODE_STRING BaseDllName, PUNICODE_STRING FullDllName, DWORD Flags)
+{
+    NTSTATUS Status;
+
+    PWCHAR FileName;
+    UNICODE_STRING DllName;
+    BOOLEAN ResolvedNamesNotEqual = FALSE;
+
+    WID_HIDDEN( LdrpLogInternal("minkernel\\ntdll\\ldrfind.c", 0x6B9, "LdrpResolveDllName", 3u, "DLL name: %wZ\n", LoadContext); )
+
+    // Converted goto to do-while loop.
+    do
+    {
+        // This if will go in if call stack starts back from LoadLibraryExW with an absolute path.
+        if (Flags & LOAD_LIBRARY_SEARCH_APPLICATION_DIR)
+        {
+            DllName = LoadContext->BaseDllName;
+        }
+        else
+        {
+            Status = LdrpGetFullPath(LoadContext, &FileNameBuffer->pFileName);
+            if (!NT_SUCCESS(Status))
+            {
+                if (ResolvedNamesNotEqual)
+                    LdrpFreeUnicodeString(&DllName);
+
+                WID_HIDDEN(LdrpLogInternal("minkernel\\ntdll\\ldrfind.c", 0x742, "LdrpResolveDllName", 4, "Status: 0x%08lx\n", Status); )
+                return Status;
+            }
+
+            FileName = FileNameBuffer->FileName;
+            DllName = FileNameBuffer->pFileName;
+
+            ResolvedNamesNotEqual = (FileNameBuffer->FileName != FileNameBuffer->pFileName.Buffer);
+            if (ResolvedNamesNotEqual)
+            {
+                FileNameBuffer->pFileName.Buffer = FileName;
+                FileNameBuffer->pFileName.MaximumLength = MAX_PATH - 4;
+                *FileName = 0;
+                break;
+            }
+        }
+
+        USHORT Length = DllName.Length;
+        PWCHAR Buffer = DllName.Buffer;
+        Status = LdrpAllocateUnicodeString(&DllName, DllName.Length);
+        if (!NT_SUCCESS(Status))
+        {
+            if (ResolvedNamesNotEqual)
+                LdrpFreeUnicodeString(&DllName);
+
+            WID_HIDDEN(LdrpLogInternal("minkernel\\ntdll\\ldrfind.c", 0x742, "LdrpResolveDllName", 4, "Status: 0x%08lx\n", Status); )
+            return Status;
+        }
+        ResolvedNamesNotEqual = 1;
+        memmove(DllName.Buffer, Buffer, Length + 2);
+        DllName.Length = Length;
+    } while (FALSE);
+
+
+    FileNameBuffer->pFileName.Length = 0;
+    if ((Flags & 0x10000000) != 0)
+        Status = LdrpAppendUnicodeStringToFilenameBuffer(&FileNameBuffer->pFileName.Length, LoadContext);
+    else
+        Status = LdrpGetNtPathFromDosPath(&DllName, FileNameBuffer);
+
+    if (NT_SUCCESS(Status))
+    {
+        *FullDllName = DllName;
+        LdrpGetBaseNameFromFullName(&DllName, BaseDllName);
+        WID_HIDDEN(LdrpLogInternal("minkernel\\ntdll\\ldrfind.c", 0x742, "LdrpResolveDllName", 4, "Status: 0x%08lx\n", Status); )
+        return Status;
+    }
+
+    NTSTATUS StatusAdded = (Status + 0x3FFFFFF1);
+    //LONGLONG BitTestVar = 0x1C3000000011;
+    LONGLONG BitTestVar = 0b0001'1100'0011'0000'0000'0000'0000'0000'0000'0000'0001'0001;
+    if (StatusAdded <= 0x2C && (_bittest64(&BitTestVar, StatusAdded)) || Status == STATUS_DEVICE_OFF_LINE || Status == STATUS_DEVICE_NOT_READY)
+    {
+        WID_HIDDEN( LdrpLogInternal("minkernel\\ntdll\\ldrfind.c", 0x72D, "LdrpResolveDllName", 2, "Original status: 0x%08lx\n", Status); )
+        Status = STATUS_DLL_NOT_FOUND;
+    }
+    if (ResolvedNamesNotEqual)
+        LdrpFreeUnicodeString(&DllName);
+
+    WID_HIDDEN( LdrpLogInternal("minkernel\\ntdll\\ldrfind.c", 0x742, "LdrpResolveDllName", 4, "Status: 0x%08lx\n", Status); )
+    return Status;
+}
+
+
 // Planning to implement them all in the future.
-tNtOpenThreadToken              NtOpenThreadToken               = nullptr;
-tNtClose                        NtClose                         = nullptr;
-tRtlAllocateHeap			    RtlAllocateHeap				    = nullptr;
-tRtlFreeHeap				    RtlFreeHeap					    = nullptr;
-tLdrGetDllPath				    LdrGetDllPath				    = nullptr;
-tRtlReleasePath				    RtlReleasePath				    = nullptr;
-tRtlInitUnicodeStringEx		    RtlInitUnicodeStringEx		    = nullptr;
-tRtlEnterCriticalSection	    RtlEnterCriticalSection         = nullptr;
-tRtlLeaveCriticalSection        RtlLeaveCriticalSection         = nullptr;
-tZwSetEvent                     ZwSetEvent                      = nullptr;
-tLdrpLogInternal			    LdrpLogInternal				    = nullptr;
-tLdrpInitializeDllPath		    LdrpInitializeDllPath		    = nullptr;
-tLdrpDereferenceModule		    LdrpDereferenceModule		    = nullptr;
-tLdrpLogDllState			    LdrpLogDllState				    = nullptr;
-tLdrpPreprocessDllName		    LdrpPreprocessDllName		    = nullptr;
-tLdrpFastpthReloadedDll		    LdrpFastpthReloadedDll		    = nullptr;
-tLdrpDrainWorkQueue			    LdrpDrainWorkQueue			    = nullptr;
-tLdrpFindLoadedDllByHandle	    LdrpFindLoadedDllByHandle	    = nullptr;
-tLdrpDropLastInProgressCount    LdrpDropLastInProgressCount     = nullptr;
-tLdrpQueryCurrentPatch          LdrpQueryCurrentPatch           = nullptr;
-tLdrpUndoPatchImage             LdrpUndoPatchImage              = nullptr;
-tLdrpDetectDetour               LdrpDetectDetour                = nullptr;
-tLdrpFindOrPrepareLoadingModule LdrpFindOrPrepareLoadingModule  = nullptr;
-tLdrpFreeLoadContext            LdrpFreeLoadContext             = nullptr;
-tLdrpCondenseGraph              LdrpCondenseGraph               = nullptr;
-tLdrpBuildForwarderLink         LdrpBuildForwarderLink          = nullptr;
-tLdrpPinModule                  LdrpPinModule                   = nullptr;
-tLdrpApplyPatchImage            LdrpApplyPatchImage             = nullptr;
-tLdrpFreeLoadContextOfNode      LdrpFreeLoadContextOfNode       = nullptr;
-tLdrpDecrementModuleLoadCountEx LdrpDecrementModuleLoadCountEx  = nullptr;
-tLdrpLogError                   LdrpLogError                    = nullptr;
-tLdrpLogDeprecatedDllEtwEvent   LdrpLogDeprecatedDllEtwEvent    = nullptr;
-tLdrpLogLoadFailureEtwEvent     LdrpLogLoadFailureEtwEvent      = nullptr;
-tLdrpReportError                LdrpReportError                 = nullptr;
-tLdrpResolveDllName             LdrpResolveDllName              = nullptr;
-tLdrpAppCompatRedirect          LdrpAppCompatRedirect           = nullptr;
-tLdrpHashUnicodeString          LdrpHashUnicodeString           = nullptr;
-tLdrpFindExistingModule         LdrpFindExistingModule          = nullptr;
-tLdrpLoadContextReplaceModule   LdrpLoadContextReplaceModule    = nullptr;
+tNtOpenThreadToken                  NtOpenThreadToken                   = nullptr;
+tNtClose                            NtClose                             = nullptr;
+tRtlAllocateHeap			        RtlAllocateHeap				        = nullptr;
+tRtlFreeHeap				        RtlFreeHeap					        = nullptr;
+tLdrGetDllPath				        LdrGetDllPath				        = nullptr;
+tRtlReleasePath				        RtlReleasePath				        = nullptr;
+tRtlInitUnicodeStringEx		        RtlInitUnicodeStringEx		        = nullptr;
+tRtlEnterCriticalSection	        RtlEnterCriticalSection             = nullptr;
+tRtlLeaveCriticalSection            RtlLeaveCriticalSection             = nullptr;
+tZwSetEvent                         ZwSetEvent                          = nullptr;
+tNtOpenFile                         NtOpenFile                          = nullptr;
+tLdrAppxHandleIntegrityFailure      LdrAppxHandleIntegrityFailure       = nullptr;
+tNtRaiseHardError                   NtRaiseHardError                    = nullptr;
+
+
+tLdrpLogInternal			                LdrpLogInternal				            = nullptr;
+tLdrpInitializeDllPath		                LdrpInitializeDllPath		            = nullptr;
+tLdrpDereferenceModule		                LdrpDereferenceModule		            = nullptr;
+tLdrpLogDllState			                LdrpLogDllState				            = nullptr;
+tLdrpPreprocessDllName		                LdrpPreprocessDllName		            = nullptr;
+tLdrpFastpthReloadedDll		                LdrpFastpthReloadedDll		            = nullptr;
+tLdrpDrainWorkQueue			                LdrpDrainWorkQueue			            = nullptr;
+tLdrpFindLoadedDllByHandle	                LdrpFindLoadedDllByHandle	            = nullptr;
+tLdrpDropLastInProgressCount                LdrpDropLastInProgressCount             = nullptr;
+tLdrpQueryCurrentPatch                      LdrpQueryCurrentPatch                   = nullptr;
+tLdrpUndoPatchImage                         LdrpUndoPatchImage                      = nullptr;
+tLdrpDetectDetour                           LdrpDetectDetour                        = nullptr;
+tLdrpFindOrPrepareLoadingModule             LdrpFindOrPrepareLoadingModule          = nullptr;
+tLdrpFreeLoadContext                        LdrpFreeLoadContext                     = nullptr;
+tLdrpCondenseGraph                          LdrpCondenseGraph                       = nullptr;
+tLdrpBuildForwarderLink                     LdrpBuildForwarderLink                  = nullptr;
+tLdrpPinModule                              LdrpPinModule                           = nullptr;
+tLdrpApplyPatchImage                        LdrpApplyPatchImage                     = nullptr;
+tLdrpFreeLoadContextOfNode                  LdrpFreeLoadContextOfNode               = nullptr;
+tLdrpDecrementModuleLoadCountEx             LdrpDecrementModuleLoadCountEx          = nullptr;
+tLdrpLogError                               LdrpLogError                            = nullptr;
+tLdrpLogDeprecatedDllEtwEvent               LdrpLogDeprecatedDllEtwEvent            = nullptr;
+tLdrpLogLoadFailureEtwEvent                 LdrpLogLoadFailureEtwEvent              = nullptr;
+tLdrpReportError                            LdrpReportError                         = nullptr;
+tLdrpResolveDllName                         LdrpResolveDllName                      = nullptr;
+tLdrpAppCompatRedirect                      LdrpAppCompatRedirect                   = nullptr;
+tLdrpHashUnicodeString                      LdrpHashUnicodeString                   = nullptr;
+tLdrpFindExistingModule                     LdrpFindExistingModule                  = nullptr;
+tLdrpLoadContextReplaceModule               LdrpLoadContextReplaceModule            = nullptr;
+tLdrpCheckForRetryLoading                   LdrpCheckForRetryLoading                = nullptr;
+tLdrpLogEtwEvent                            LdrpLogEtwEvent                         = nullptr;
+tLdrpCheckComponentOnDemandEtwEvent         LdrpCheckComponentOnDemandEtwEvent      = nullptr;
+tLdrpValidateIntegrityContinuity            LdrpValidateIntegrityContinuity         = nullptr;
+tLdrpSetModuleSigningLevel                  LdrpSetModuleSigningLevel               = nullptr;
+tLdrpCodeAuthzCheckDllAllowed               LdrpCodeAuthzCheckDllAllowed            = nullptr;
+tLdrpGetFullPath                            LdrpGetFullPath                         = nullptr;
+tLdrpAllocateUnicodeString                  LdrpAllocateUnicodeString               = nullptr;
+tLdrpAppendUnicodeStringToFilenameBuffer    LdrpAppendUnicodeStringToFilenameBuffer = nullptr;
+tLdrpGetNtPathFromDosPath                   LdrpGetNtPathFromDosPath                = nullptr;

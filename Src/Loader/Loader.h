@@ -17,6 +17,7 @@
 #define LoadOwner 0x1000
 #define LoaderWorker 0x2000
 
+#define FLG_ENABLE_KDEBUG_SYMBOL_LOAD 0x40000
 
 // LDR_DATA_TABLE_ENTRY.Flags
 #define	PackagedBinary			0x00000001
@@ -68,6 +69,7 @@ namespace WID
 
 			LDR_DATA_TABLE_ENTRY* __fastcall LdrpHandleReplacedModule(LDR_DATA_TABLE_ENTRY* LdrDataTableEntry);
 			NTSTATUS __fastcall LdrpFreeReplacedModule(LDR_DATA_TABLE_ENTRY* LdrDataTableEntry);
+			NTSTATUS __fastcall LdrpResolveDllName(LDRP_LOAD_CONTEXT* LoadContext, LDRP_FILENAME_BUFFER* FileNameBuffer, PUNICODE_STRING BaseDllName, PUNICODE_STRING FullDllName, DWORD Flags);
 
 			// Using directly is not recommended.
 			HMODULE __fastcall fLoadLibrary(PTCHAR lpLibFileName);
@@ -80,13 +82,13 @@ namespace WID
 			NTSTATUS __fastcall fLdrpLoadDll(PUNICODE_STRING DllName, LDR_UNKSTRUCT* DllPathInited, ULONG Flags, LDR_DATA_TABLE_ENTRY** DllEntry);
 			NTSTATUS __fastcall fLdrpLoadDllInternal(PUNICODE_STRING FullPath, LDR_UNKSTRUCT* DllPathInited, ULONG Flags, ULONG LdrFlags, PLDR_DATA_TABLE_ENTRY LdrEntry, PLDR_DATA_TABLE_ENTRY LdrEntry2, PLDR_DATA_TABLE_ENTRY* DllEntry, NTSTATUS* pStatus, ULONGLONG Zero);
 
-			NTSTATUS __fastcall fLdrpProcessWork(PLDRP_LOAD_CONTEXT LoadContext, BOOLEAN Unknown);
+			NTSTATUS __fastcall fLdrpProcessWork(PLDRP_LOAD_CONTEXT LoadContext, BOOLEAN IsLoadOwner);
 			NTSTATUS __fastcall fLdrpSnapModule(PLDRP_LOAD_CONTEXT LoadContext);
 			NTSTATUS __fastcall fLdrpMapDllRetry(PLDRP_LOAD_CONTEXT LoadContext);
 			NTSTATUS __fastcall fLdrpMapDllFullPath(PLDRP_LOAD_CONTEXT LoadContext);
 			NTSTATUS __fastcall fLdrpMapDllSearchPath(PLDRP_LOAD_CONTEXT LoadContext);
-			NTSTATUS __fastcall fLdrpMapDllNtFileName(PLDRP_LOAD_CONTEXT LoadContext, PUNICODE_STRING DllNameResolved);
-		
+			NTSTATUS __fastcall fLdrpMapDllNtFileName(PLDRP_LOAD_CONTEXT LoadContext, LDRP_FILENAME_BUFFER* FileNameBuffer);
+			NTSTATUS __fastcall fLdrpMapDllWithSectionHandle(PLDRP_LOAD_CONTEXT LoadContext);
 
 
 			NTSTATUS __fastcall fLdrpPrepareModuleForExecution(PLDR_DATA_TABLE_ENTRY LdrEntry, NTSTATUS* pStatus);

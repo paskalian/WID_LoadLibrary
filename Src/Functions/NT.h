@@ -8,16 +8,24 @@
 #define NT_SUCCESS(x) ((x)>=0)
 #define STATUS_SUCCESS						0x0
 #define STATUS_IMAGE_MACHINE_TYPE_MISMATCH	0x4000000E
+#define STATUS_DEVICE_OFF_LINE				0x80000010
 #define STATUS_UNSUCCESSFUL					0xC0000001
+#define STATUS_ACCESS_DENIED				0xC0000022
+#define STATUS_OBJECT_NAME_NOT_FOUND		0xC0000034
+#define STATUS_OBJECT_PATH_NOT_FOUND		0xC000003A
 #define STATUS_NO_SUCH_FILE					0xC000000F
+#define STATUS_DEVICE_NOT_READY				0xC00000A3
 #define STATUS_INVALID_IMAGE_FORMAT			0xC000007B
 #define STATUS_NO_TOKEN						0xC000007C
+#define STATUS_INSUFFICIENT_RESOURCES		0xC000009A
+#define STATUS_COMMITMENT_LIMIT				0xC000012D
 #define STATUS_NO_APPLICATION_PACKAGE		0xC00001AA
+#define STATUS_NOT_FOUND					0xC0000225
 #define STATUS_RETRY						0xC000022D
+#define STATUS_NEEDS_REMEDIATION			0xC0000462
 #define STATUS_PATCH_CONFLICT				0xC00004AC
 #define STATUS_IMAGE_LOADED_AS_PATCH_IMAGE	0xC00004C0
 #define STATUS_INVALID_THREAD				0xC000071C
-
 
 // Implemented.
 extern HANDLE*					LdrpMainThreadToken;
@@ -27,11 +35,21 @@ extern PRTL_CRITICAL_SECTION	LdrpWorkQueueLock;
 extern DWORD*					LdrpWorkInProgress;
 extern LIST_ENTRY**				LdrpWorkQueue;
 extern PHANDLE					LdrpWorkCompleteEvent;
+extern KUSER_SHARED_DATA*		kUserSharedData;
+extern DWORD*					LdrpUseImpersonatedDeviceMap;
+extern DWORD*					LdrpAuditIntegrityContinuity;
+extern DWORD*					LdrpEnforceIntegrityContinuity;
+extern DWORD*					LdrpFatalHardErrorCount;
+extern DWORD*					UseWOW64;
 
 PEB* NtCurrentPeb();
 VOID __fastcall NtdllpFreeStringRoutine(PWCH Buffer);
 VOID __fastcall RtlFreeUnicodeString(PUNICODE_STRING UnicodeString);
 VOID __fastcall LdrpFreeUnicodeString(PUNICODE_STRING String);
+ULONG __fastcall RtlGetCurrentServiceSessionId(VOID);
+extern "C" __int64 __fastcall ZwSystemDebugControl();
+extern "C" __int64 __fastcall NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, OBJECT_ATTRIBUTES* ObjectAttributes, PLARGE_INTEGER MaximumSize, ULONG SectionPageProtection, ULONG AllocationAttributes, HANDLE FileHandle);
+USHORT __fastcall LdrpGetBaseNameFromFullName(PUNICODE_STRING BaseName, PUNICODE_STRING FullName);
 //NTSTATUS __fastcall LdrpThreadTokenSetMainThreadToken();
 
 // Planning to implement them all in the future.
@@ -65,6 +83,16 @@ extern	tRtlLeaveCriticalSection RtlLeaveCriticalSection;
 typedef NTSTATUS(__fastcall* tZwSetEvent)(HANDLE EventHandle, PLONG PreviousState);
 extern	tZwSetEvent ZwSetEvent;
 
+typedef NTSTATUS(__fastcall* tNtOpenFile)(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, OBJECT_ATTRIBUTES* ObjectAttributes, PIO_STATUS_BLOCK IoStatusBlock, ULONG ShareAccess, ULONG OpenOptions);
+extern tNtOpenFile NtOpenFile;
+
+typedef NTSTATUS(__fastcall* tLdrAppxHandleIntegrityFailure)(NTSTATUS Status);
+extern tLdrAppxHandleIntegrityFailure LdrAppxHandleIntegrityFailure;
+
+typedef NTSTATUS(__fastcall* tNtRaiseHardError)(NTSTATUS Status, ULONG NumberOfParameters, ULONG UnicodeStringParameterMask, INT* Parameters, HARDERROR_RESPONSE_OPTION ValidResponseOption, HARDERROR_RESPONSE* Response);
+extern tNtRaiseHardError NtRaiseHardError;
+
+
 #define LDRP_LOG_INTERNAL_PATTERN "\x89\x54\x24\x10\x4C\x8B\xDC\x49\x89\x4B\x08"
 typedef NTSTATUS(__fastcall* tLdrpLogInternal)(PCHAR, ULONG, PCHAR, ULONG, PCHAR, ...);
 extern	tLdrpLogInternal LdrpLogInternal;
@@ -90,7 +118,7 @@ typedef NTSTATUS(__fastcall* tLdrpFastpthReloadedDll)(PUNICODE_STRING FullPath, 
 extern	tLdrpFastpthReloadedDll LdrpFastpthReloadedDll;
 
 #define LDRP_DRAIN_WORKQUEUE_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x6C\x24\x10\x48\x89\x74\x24\x18\x57\x41\x54\x41\x56\x48\x83\xEC\x20\x4C\x8B\x35\x35\xA3\x15\x00"
-typedef TEB* (__fastcall* tLdrpDrainWorkQueue)(BOOL IsLoadEvent);
+typedef TEB* (__fastcall* tLdrpDrainWorkQueue)(DRAIN_TASK DrainTask);
 extern	tLdrpDrainWorkQueue LdrpDrainWorkQueue;
 
 #define LDRP_FIND_LOADEDDLL_BYHANDLE_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x74\x24\x10\x48\x89\x7C\x24\x18\x41\x56\x48\x83\xEC\x20\x33\xDB\x49\x8B\xF8\x4C\x8B\xF2"
@@ -146,7 +174,7 @@ typedef NTSTATUS(__fastcall* tLdrpDecrementModuleLoadCountEx)(PLDR_DATA_TABLE_EN
 extern tLdrpDecrementModuleLoadCountEx LdrpDecrementModuleLoadCountEx;
 
 #define LDRP_LOG_ERROR_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x6C\x24\x10\x48\x89\x74\x24\x18\x57\x48\x83\xEC\x30\x49\x8B\xD9"
-typedef PEB*(__fastcall* tLdrpLogError)(NTSTATUS Status, ULONG, ULONG, PLDRP_LOAD_CONTEXT LoadContext);
+typedef PEB*(__fastcall* tLdrpLogError)(NTSTATUS Status, ULONG, ULONG, PVOID);
 extern tLdrpLogError LdrpLogError;
 
 #define LDRP_LOG_DEPRECATED_DLL_PATTERN "\x48\x89\x5C\x24\x10\x48\x89\x6C\x24\x18\x48\x89\x74\x24\x20\x57\x48\x83\xEC\x40"
@@ -162,11 +190,11 @@ typedef NTSTATUS(__fastcall* tLdrpReportError)(PLDRP_LOAD_CONTEXT LoadContext, U
 extern tLdrpReportError LdrpReportError;
 
 #define LDRP_RESOLVE_DLLNAME_PATTERN "\x4C\x8B\xDC\x49\x89\x5B\x08\x49\x89\x6B\x10\x49\x89\x73\x20\x4D\x89\x43\x18\x57\x41\x54\x41\x55\x41\x56"
-typedef NTSTATUS(__fastcall* tLdrpResolveDllName)(PLDRP_LOAD_CONTEXT LoadContext, PUNICODE_STRING DllNameResolved, PUNICODE_STRING BaseDllName, PUNICODE_STRING FullDllName, DWORD Flags);
+typedef NTSTATUS(__fastcall* tLdrpResolveDllName)(PLDRP_LOAD_CONTEXT FileName, LDRP_FILENAME_BUFFER* FileNameBuffer, PUNICODE_STRING FullName, PUNICODE_STRING ResolvedName, DWORD Flags);
 extern tLdrpResolveDllName LdrpResolveDllName;
 
 #define LDRP_APP_COMPAT_REDIRECT_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x6C\x24\x10\x48\x89\x74\x24\x18\x57\x41\x56\x41\x57\x48\x83\xEC\x50\x45\x33\xFF\x49\x8B\xF1\x44\x38\x3D\xC3\x3A\x17\x00"
-typedef NTSTATUS(__fastcall* tLdrpAppCompatRedirect)(PLDRP_LOAD_CONTEXT LoadContext, PUNICODE_STRING FullDllName, PUNICODE_STRING BaseDllName, PUNICODE_STRING DllNameResolved, NTSTATUS Status);
+typedef NTSTATUS(__fastcall* tLdrpAppCompatRedirect)(PLDRP_LOAD_CONTEXT LoadContext, PUNICODE_STRING FullDllName, PUNICODE_STRING BaseDllName, LDRP_FILENAME_BUFFER* FileNameBuffer, NTSTATUS Status);
 extern tLdrpAppCompatRedirect LdrpAppCompatRedirect;
 
 #define LDRP_HASH_UNICODE_STRING_PATTERN "\x48\x89\x5C\x24\x08\x57\x48\x83\xEC\x20\x45\x33\xDB"
@@ -180,3 +208,43 @@ extern tLdrpFindExistingModule LdrpFindExistingModule;
 #define LDRP_LOADCONTEXT_REPLACE_MODULE_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x6C\x24\x10\x48\x89\x74\x24\x18\x57\x48\x83\xEC\x20\x48\x8B\xD9\x48\x8B\xF2"
 typedef NTSTATUS(__fastcall* tLdrpLoadContextReplaceModule)(PLDRP_LOAD_CONTEXT LoadContext, PLDR_DATA_TABLE_ENTRY LoadedDll);
 extern tLdrpLoadContextReplaceModule LdrpLoadContextReplaceModule;
+
+#define LDRP_CHECKFORRETRY_LOADING_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x6C\x24\x10\x48\x89\x74\x24\x18\x57\x41\x54\x41\x55\x41\x56\x41\x57\x48\x83\xEC\x20\x33\xDB\x44\x8A\xFA"
+typedef BOOLEAN(__fastcall* tLdrpCheckForRetryLoading)(PLDRP_LOAD_CONTEXT LoadContext, BOOLEAN Unknown);
+extern tLdrpCheckForRetryLoading LdrpCheckForRetryLoading;
+
+#define LDRP_LOG_ETWEVENT_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x6C\x24\x10\x48\x89\x74\x24\x18\x57\x41\x54\x41\x55\x41\x56\x41\x57\x48\x81\xEC\x80\x02\x00\x00"
+typedef NTSTATUS(__fastcall* tLdrpLogEtwEvent)(ULONG a1, ULONGLONG a2, ULONG a3, ULONG a4);
+extern tLdrpLogEtwEvent LdrpLogEtwEvent;
+
+#define LDRP_CHECK_COMPONENTONDEMAND_PATTERN "\x48\x89\x5C\x24\x10\x48\x89\x74\x24\x18\x55\x57\x41\x56\x48\x8B\xEC\x48\x81\xEC\x80\x00\x00\x00"
+typedef BOOLEAN(__fastcall* tLdrpCheckComponentOnDemandEtwEvent)(PUSHORT Length);
+extern tLdrpCheckComponentOnDemandEtwEvent LdrpCheckComponentOnDemandEtwEvent;
+
+#define LDRP_VALIDATE_INTEGRITY_PATTERN "\x44\x88\x44\x24\x18\x53\x56\x57\x48\x83\xEC\x30"
+typedef NTSTATUS(__fastcall* tLdrpValidateIntegrityContinuity)(PLDRP_LOAD_CONTEXT LoadContext, HANDLE FileHandle);
+extern tLdrpValidateIntegrityContinuity LdrpValidateIntegrityContinuity;
+
+#define LDRP_SET_MODULE_SIGNINGLEVEL_PATTERN "\x4C\x8B\xDC\x49\x89\x5B\x10\x49\x89\x73\x18\x49\x89\x7B\x20\x49\x89\x4B\x08\x41\x56"
+typedef NTSTATUS(__fastcall* tLdrpSetModuleSigningLevel)(HANDLE FileHandle, PLDR_DATA_TABLE_ENTRY LoadContext, PULONG pSigningLevel, ULONG NewSigningLevelMaybe);
+extern tLdrpSetModuleSigningLevel LdrpSetModuleSigningLevel;
+
+#define LDRP_CODE_AUTHZCHECKDLL_ALLOWED_PATTERN "\x48\x83\x3D\xC8\x44\x17\x00\x00\x4C\x8B\xCA"
+typedef NTSTATUS(__fastcall* tLdrpCodeAuthzCheckDllAllowed)(PUNICODE_STRING pFileNameBuffer, HANDLE FileHandle);
+extern tLdrpCodeAuthzCheckDllAllowed LdrpCodeAuthzCheckDllAllowed;
+
+#define LDRP_GET_FULLPATH_PATTERN "\x4C\x8B\xDC\x49\x89\x5B\x08\x55\x56\x57\x41\x56\x41\x57\x48\x83\xEC\x30"
+typedef NTSTATUS(__fastcall* tLdrpGetFullPath)(PLDRP_LOAD_CONTEXT LoadContext, PUNICODE_STRING FullPath);
+extern tLdrpGetFullPath LdrpGetFullPath;
+
+#define LDRP_ALLOCATE_UNICODESTRING_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x74\x24\x10\x57\x48\x83\xEC\x20\x33\xDB\x8D\x7A\x02"
+typedef NTSTATUS(__fastcall* tLdrpAllocateUnicodeString)(PUNICODE_STRING Allocated, USHORT Length);
+extern tLdrpAllocateUnicodeString LdrpAllocateUnicodeString;
+
+#define LDRP_APPEND_UNICODETOFILENAME_PATTERN "\x48\x8B\xC4\x48\x89\x58\x08\x48\x89\x68\x10\x48\x89\x70\x18\x48\x89\x78\x20\x41\x56\x48\x83\xEC\x20\x45\x33\xF6\x48\x8B\xEA"
+typedef NTSTATUS(__fastcall* tLdrpAppendUnicodeStringToFilenameBuffer)(PUSHORT pLength, PLDRP_LOAD_CONTEXT LoadContext);
+extern tLdrpAppendUnicodeStringToFilenameBuffer LdrpAppendUnicodeStringToFilenameBuffer;
+
+#define LDRP_GET_NTPATH_FROM_DOSPATH_PATTERN "\x48\x89\x5C\x24\x18\x55\x56\x57\x48\x8D\x6C\x24\xB9\x48\x81\xEC\xC0\x00\x00\x00"
+typedef NTSTATUS(__fastcall* tLdrpGetNtPathFromDosPath)(PUNICODE_STRING DosPath, LDRP_FILENAME_BUFFER* NtPath);
+extern tLdrpGetNtPathFromDosPath LdrpGetNtPathFromDosPath;
