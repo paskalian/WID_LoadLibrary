@@ -190,7 +190,7 @@ typedef struct _LDR_DATA_TABLE_ENTRY
         LIST_ENTRY InInitializationOrderLinks;
         LIST_ENTRY InProgressLinks;
     };
-    PVOID DllBase;
+    PIMAGE_DOS_HEADER DllBase;
     PLDR_INIT_ROUTINE EntryPoint;
     ULONG SizeOfImage;
     UNICODE_STRING FullDllName;
@@ -805,7 +805,8 @@ typedef struct _LDRP_LOAD_CONTEXT
     PVOID GuardCFCheckFunctionPointer;
     __int64 GuardFlags;
     __int64 DllNameLenCompare;
-    char Pad0[16];
+    char Pad0[1][8];
+    __int64 Size;
     __int64 UnknownPtr;
     HANDLE FileHandle;
     char Pad1[8];

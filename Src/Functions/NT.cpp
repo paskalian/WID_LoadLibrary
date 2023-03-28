@@ -1,6 +1,7 @@
 #include "NT.h"
 
 // Implemented.
+DWORD*                  LdrpPolicyBits                  = nullptr;
 HANDLE*                 LdrpMainThreadToken             = nullptr;
 DWORD*                  LdrInitState                    = nullptr;
 DWORD*                  LoadFailure                     = nullptr;
@@ -14,6 +15,9 @@ DWORD*                  LdrpAuditIntegrityContinuity    = nullptr;
 DWORD*                  LdrpEnforceIntegrityContinuity  = nullptr;
 DWORD*                  LdrpFatalHardErrorCount         = nullptr;
 DWORD*                  UseWOW64                        = nullptr;
+PRTL_SRWLOCK			LdrpModuleDatatableLock         = nullptr;
+PHANDLE					qword_17E238                    = nullptr;
+LDR_DATA_TABLE_ENTRY**  LdrpImageEntry                  = nullptr;
 
 PEB* NtCurrentPeb()
 {
@@ -249,8 +253,11 @@ tZwSetEvent                         ZwSetEvent                          = nullpt
 tNtOpenFile                         NtOpenFile                          = nullptr;
 tLdrAppxHandleIntegrityFailure      LdrAppxHandleIntegrityFailure       = nullptr;
 tNtRaiseHardError                   NtRaiseHardError                    = nullptr;
+tRtlImageNtHeaderEx                 RtlImageNtHeaderEx                  = nullptr;
+tRtlAcquireSRWLockExclusive         RtlAcquireSRWLockExclusive          = nullptr;
+tRtlReleaseSRWLockExclusive         RtlReleaseSRWLockExclusive          = nullptr;
 
-
+// Signatured
 tLdrpLogInternal			                LdrpLogInternal				            = nullptr;
 tLdrpInitializeDllPath		                LdrpInitializeDllPath		            = nullptr;
 tLdrpDereferenceModule		                LdrpDereferenceModule		            = nullptr;
@@ -290,3 +297,10 @@ tLdrpGetFullPath                            LdrpGetFullPath                     
 tLdrpAllocateUnicodeString                  LdrpAllocateUnicodeString               = nullptr;
 tLdrpAppendUnicodeStringToFilenameBuffer    LdrpAppendUnicodeStringToFilenameBuffer = nullptr;
 tLdrpGetNtPathFromDosPath                   LdrpGetNtPathFromDosPath                = nullptr;
+tLdrpMinimalMapModule                       LdrpMinimalMapModule                    = nullptr;
+tLdrpFindLoadedDllByNameLockHeld            LdrpFindLoadedDllByNameLockHeld         = nullptr;
+tLdrpFindLoadedDllByMappingLockHeld         LdrpFindLoadedDllByMappingLockHeld      = nullptr;
+tLdrpInsertDataTableEntry                   LdrpInsertDataTableEntry                = nullptr;
+tLdrpInsertModuleToIndexLockHeld            LdrpInsertModuleToIndexLockHeld         = nullptr;
+tLdrpLogEtwHotPatchStatus                   LdrpLogEtwHotPatchStatus                = nullptr;
+tLdrpLogNewDllLoad                          LdrpLogNewDllLoad                       = nullptr;

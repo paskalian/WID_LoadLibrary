@@ -12,12 +12,30 @@
 #define CNVTD_LOAD_LIBRARY_REQUIRE_SIGNED_TARGET 0x800000
 #define CNVTD_LOAD_LIBRARY_OS_INTEGRITY_CONTINUITY 0x80000000
 
-#define LdrpPolicyBits 0x6F
-
 #define LoadOwner 0x1000
 #define LoaderWorker 0x2000
 
 #define FLG_ENABLE_KDEBUG_SYMBOL_LOAD 0x40000
+
+// OBJECT_ATTRIBUTES.Attributes
+#define OBJ_INHERIT 0x00000002
+#define OBJ_PERMANENT 0x00000010
+#define OBJ_EXCLUSIVE 0x00000020
+#define OBJ_CASE_INSENSITIVE 0x00000040
+#define OBJ_OPENIF 0x00000080
+#define OBJ_OPENLINK 0x00000100
+#define OBJ_KERNEL_HANDLE 0x00000200
+#define OBJ_FORCE_ACCESS_CHECK 0x00000400
+#define OBJ_VALID_ATTRIBUTES 0x000007f2
+#define OBJ_IGNORE_IMPERSONATED_DEVICEMAP 0x800
+
+// PEB.Bitfield
+#define IsPackagedProcess 0x10
+
+// PEB.TracingFlags
+#define HeapTracingEnabled 0x1
+#define CritSecTracingEnabled 0x2
+#define LibLoaderTracingEnabled 0x4
 
 // LDR_DATA_TABLE_ENTRY.Flags
 #define	PackagedBinary			0x00000001
@@ -88,7 +106,13 @@ namespace WID
 			NTSTATUS __fastcall fLdrpMapDllFullPath(PLDRP_LOAD_CONTEXT LoadContext);
 			NTSTATUS __fastcall fLdrpMapDllSearchPath(PLDRP_LOAD_CONTEXT LoadContext);
 			NTSTATUS __fastcall fLdrpMapDllNtFileName(PLDRP_LOAD_CONTEXT LoadContext, LDRP_FILENAME_BUFFER* FileNameBuffer);
-			NTSTATUS __fastcall fLdrpMapDllWithSectionHandle(PLDRP_LOAD_CONTEXT LoadContext);
+			NTSTATUS __fastcall fLdrpMapDllWithSectionHandle(PLDRP_LOAD_CONTEXT LoadContext, HANDLE SectionHandle);
+
+			NTSTATUS __fastcall fLdrpCompleteMapModule(PLDRP_LOAD_CONTEXT LoadContext, PIMAGE_NT_HEADERS OutHeaders, NTSTATUS Status);
+			NTSTATUS __fastcall fLdrpProcessMappedModule(PLDR_DATA_TABLE_ENTRY LdrEntry, ULONG64 Flags, ULONG Unknown);
+			NTSTATUS __fastcall fLdrpCorProcessImports(PLDR_DATA_TABLE_ENTRY LdrEntry);
+			NTSTATUS __fastcall fLdrpMapAndSnapDependency(PLDRP_LOAD_CONTEXT LoadContext);
+
 
 
 			NTSTATUS __fastcall fLdrpPrepareModuleForExecution(PLDR_DATA_TABLE_ENTRY LdrEntry, NTSTATUS* pStatus);

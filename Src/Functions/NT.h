@@ -28,6 +28,7 @@
 #define STATUS_INVALID_THREAD				0xC000071C
 
 // Implemented.
+extern DWORD*					LdrpPolicyBits;
 extern HANDLE*					LdrpMainThreadToken;
 extern DWORD*					LdrInitState;
 extern DWORD*					LoadFailure;
@@ -41,6 +42,9 @@ extern DWORD*					LdrpAuditIntegrityContinuity;
 extern DWORD*					LdrpEnforceIntegrityContinuity;
 extern DWORD*					LdrpFatalHardErrorCount;
 extern DWORD*					UseWOW64;
+extern PRTL_SRWLOCK				LdrpModuleDatatableLock;
+extern PHANDLE					qword_17E238;
+extern LDR_DATA_TABLE_ENTRY**	LdrpImageEntry;
 
 PEB* NtCurrentPeb();
 VOID __fastcall NtdllpFreeStringRoutine(PWCH Buffer);
@@ -92,7 +96,16 @@ extern tLdrAppxHandleIntegrityFailure LdrAppxHandleIntegrityFailure;
 typedef NTSTATUS(__fastcall* tNtRaiseHardError)(NTSTATUS Status, ULONG NumberOfParameters, ULONG UnicodeStringParameterMask, INT* Parameters, HARDERROR_RESPONSE_OPTION ValidResponseOption, HARDERROR_RESPONSE* Response);
 extern tNtRaiseHardError NtRaiseHardError;
 
+typedef NTSTATUS(__fastcall* tRtlImageNtHeaderEx)(ULONG Flags, PVOID Base, ULONG64 Size, PIMAGE_NT_HEADERS* OutHeaders);
+extern tRtlImageNtHeaderEx RtlImageNtHeaderEx;
 
+typedef VOID(__fastcall* tRtlAcquireSRWLockExclusive)(PRTL_SRWLOCK SRWLock);
+extern tRtlAcquireSRWLockExclusive RtlAcquireSRWLockExclusive;
+
+typedef NTSTATUS(__fastcall* tRtlReleaseSRWLockExclusive)(PRTL_SRWLOCK SRWLock);
+extern tRtlReleaseSRWLockExclusive RtlReleaseSRWLockExclusive;
+
+// Signatured
 #define LDRP_LOG_INTERNAL_PATTERN "\x89\x54\x24\x10\x4C\x8B\xDC\x49\x89\x4B\x08"
 typedef NTSTATUS(__fastcall* tLdrpLogInternal)(PCHAR, ULONG, PCHAR, ULONG, PCHAR, ...);
 extern	tLdrpLogInternal LdrpLogInternal;
@@ -218,7 +231,7 @@ typedef NTSTATUS(__fastcall* tLdrpLogEtwEvent)(ULONG a1, ULONGLONG a2, ULONG a3,
 extern tLdrpLogEtwEvent LdrpLogEtwEvent;
 
 #define LDRP_CHECK_COMPONENTONDEMAND_PATTERN "\x48\x89\x5C\x24\x10\x48\x89\x74\x24\x18\x55\x57\x41\x56\x48\x8B\xEC\x48\x81\xEC\x80\x00\x00\x00"
-typedef BOOLEAN(__fastcall* tLdrpCheckComponentOnDemandEtwEvent)(PUSHORT Length);
+typedef BOOLEAN(__fastcall* tLdrpCheckComponentOnDemandEtwEvent)(PUNICODE_STRING Component);
 extern tLdrpCheckComponentOnDemandEtwEvent LdrpCheckComponentOnDemandEtwEvent;
 
 #define LDRP_VALIDATE_INTEGRITY_PATTERN "\x44\x88\x44\x24\x18\x53\x56\x57\x48\x83\xEC\x30"
@@ -248,3 +261,31 @@ extern tLdrpAppendUnicodeStringToFilenameBuffer LdrpAppendUnicodeStringToFilenam
 #define LDRP_GET_NTPATH_FROM_DOSPATH_PATTERN "\x48\x89\x5C\x24\x18\x55\x56\x57\x48\x8D\x6C\x24\xB9\x48\x81\xEC\xC0\x00\x00\x00"
 typedef NTSTATUS(__fastcall* tLdrpGetNtPathFromDosPath)(PUNICODE_STRING DosPath, LDRP_FILENAME_BUFFER* NtPath);
 extern tLdrpGetNtPathFromDosPath LdrpGetNtPathFromDosPath;
+
+#define LDRP_MINIMAL_MAP_MODULE_PATTERN "\x48\x89\x5C\x24\x20\x48\x89\x54\x24\x10\x55\x56\x57\x41\x54\x41\x55\x41\x56\x41\x57\x48\x8B\xEC\x48\x81\xEC\x80\x00\x00\x00"
+typedef NTSTATUS(__fastcall* tLdrpMinimalMapModule)(PLDRP_LOAD_CONTEXT LoadContext, HANDLE SectionHandle);
+extern tLdrpMinimalMapModule LdrpMinimalMapModule;
+
+#define LDRP_FIND_LOADEDDLL_LOCKHELD_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x6C\x24\x10\x48\x89\x74\x24\x18\x57\x41\x54\x41\x55\x41\x56\x41\x57\x48\x83\xEC\x20\x44\x8B\x7C\x24\x70"
+typedef NTSTATUS(__fastcall* tLdrpFindLoadedDllByNameLockHeld)(PUNICODE_STRING BaseDllName, PUNICODE_STRING FullDllName, DWORD Flags, PLDR_DATA_TABLE_ENTRY* pLdrEntry, DWORD BaseNameHashValue);
+extern tLdrpFindLoadedDllByNameLockHeld LdrpFindLoadedDllByNameLockHeld;
+
+#define LDRP_FIND_LOADEDDLL_MAPLOCK_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x6C\x24\x10\x48\x89\x74\x24\x18\x57\x41\x56\x41\x57\x48\x83\xEC\x30\x4C\x8B\x15\xFD\x89\x15\x00"
+typedef NTSTATUS(__fastcall* tLdrpFindLoadedDllByMappingLockHeld)(PIMAGE_DOS_HEADER DllBase, PIMAGE_NT_HEADERS OutHeaders, PVOID Unknown, PLDR_DATA_TABLE_ENTRY* pLdrEntry);
+extern tLdrpFindLoadedDllByMappingLockHeld LdrpFindLoadedDllByMappingLockHeld;
+
+#define LDRP_INSERT_DATATABLEENTRY_PATTERN "\x40\x53\x48\x83\xEC\x20\xF6\x41\x68\x40"
+typedef VOID(__fastcall* tLdrpInsertDataTableEntry)(PLDR_DATA_TABLE_ENTRY LdrEntry);
+extern tLdrpInsertDataTableEntry LdrpInsertDataTableEntry;
+
+#define LDRP_INSERT_MODTOIDX_LOCKHELD_PATTERN "\x48\x89\x5C\x24\x08\x57\x48\x83\xEC\x20\x44\x8B\x4A\x08"
+typedef NTSTATUS(__fastcall* tLdrpInsertModuleToIndexLockHeld)(PLDR_DATA_TABLE_ENTRY LdrEntry, PIMAGE_NT_HEADERS OutHeaders);
+extern tLdrpInsertModuleToIndexLockHeld LdrpInsertModuleToIndexLockHeld;
+
+#define LDRP_LOGETW_HOTPATCHSTATUS_PATTERN "\x48\x8B\xC4\x48\x89\x58\x08\x48\x89\x70\x10\x48\x89\x78\x18\x4C\x89\x60\x20\x55\x41\x56\x41\x57\x48\x8D\x68\x98"
+typedef NTSTATUS(__fastcall* tLdrpLogEtwHotPatchStatus)(PUNICODE_STRING BaseDllName, LDR_DATA_TABLE_ENTRY* LdrEntry, PUNICODE_STRING FullDllName, NTSTATUS Status, ULONG Unknown);
+extern tLdrpLogEtwHotPatchStatus LdrpLogEtwHotPatchStatus;
+
+#define LDRP_LOG_NEWDLL_LOAD_PATTERN "\x48\x8B\xC4\x48\x89\x58\x08\x48\x89\x68\x10\x48\x89\x70\x18\x48\x89\x78\x20\x41\x56\x48\x83\xEC\x30\x48\x8B\xEA\x4C\x8B\xF1"
+typedef PEB*(__fastcall* tLdrpLogNewDllLoad)(LDR_DATA_TABLE_ENTRY* LdrEntry, LDR_DATA_TABLE_ENTRY* LdrEntry2);
+extern tLdrpLogNewDllLoad LdrpLogNewDllLoad;
