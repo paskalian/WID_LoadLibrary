@@ -108,6 +108,9 @@ namespace WID
 			NTSTATUS __fastcall fLdrpMapDllNtFileName(PLDRP_LOAD_CONTEXT LoadContext, LDRP_FILENAME_BUFFER* FileNameBuffer);
 			NTSTATUS __fastcall fLdrpMapDllWithSectionHandle(PLDRP_LOAD_CONTEXT LoadContext, HANDLE SectionHandle);
 
+			NTSTATUS __fastcall fLdrpMinimalMapModule(PLDRP_LOAD_CONTEXT LoadContext, HANDLE SectionHandle);
+			NTSTATUS __fastcall fLdrpMapViewOfSection(HANDLE SectionHandle, ULONG ProtectFlags, PIMAGE_DOS_HEADER* BaseAddress, DWORD Unknown, PULONG ViewSize, ULONG AllocationType, ULONG Win32Protect, PUNICODE_STRING FullDllName);
+
 			NTSTATUS __fastcall fLdrpCompleteMapModule(PLDRP_LOAD_CONTEXT LoadContext, PIMAGE_NT_HEADERS OutHeaders, NTSTATUS Status);
 			NTSTATUS __fastcall fLdrpProcessMappedModule(PLDR_DATA_TABLE_ENTRY LdrEntry, ULONG64 Flags, ULONG Unknown);
 			NTSTATUS __fastcall fLdrpCorProcessImports(PLDR_DATA_TABLE_ENTRY LdrEntry);

@@ -16,11 +16,70 @@ typedef struct _STRING {
     PCHAR  Buffer;
 } STRING, * PSTRING, ANSI_STRING, * PANSI_STRING;
 
-typedef struct _RTL_USER_PROCESS_PARAMETERS {
-    BYTE           Reserved1[16];
-    PVOID          Reserved2[10];
+#define DOS_MAX_COMPONENT_LENGTH 255
+#define DOS_MAX_PATH_LENGTH (DOS_MAX_COMPONENT_LENGTH + 5)
+
+typedef struct _CURDIR
+{
+    UNICODE_STRING DosPath;
+    HANDLE Handle;
+} CURDIR, * PCURDIR;
+
+#define RTL_USER_PROC_CURDIR_CLOSE 0x00000002
+#define RTL_USER_PROC_CURDIR_INHERIT 0x00000003
+
+typedef struct _RTL_DRIVE_LETTER_CURDIR
+{
+    USHORT Flags;
+    USHORT Length;
+    ULONG TimeStamp;
+    STRING DosPath;
+} RTL_DRIVE_LETTER_CURDIR, * PRTL_DRIVE_LETTER_CURDIR;
+
+#define RTL_MAX_DRIVE_LETTERS 32
+#define RTL_DRIVE_LETTER_VALID (USHORT)0x0001
+
+typedef struct _RTL_USER_PROCESS_PARAMETERS
+{
+    ULONG MaximumLength;
+    ULONG Length;
+    
+    ULONG Flags;
+    ULONG DebugFlags;
+    
+    HANDLE ConsoleHandle;
+    ULONG ConsoleFlags;
+    HANDLE StandardInput;
+    HANDLE StandardOutput;
+    HANDLE StandardError;
+    
+    CURDIR CurrentDirectory;
+    UNICODE_STRING DllPath;
     UNICODE_STRING ImagePathName;
     UNICODE_STRING CommandLine;
+    PVOID Environment;
+    
+    ULONG StartingX;
+    ULONG StartingY;
+    ULONG CountX;
+    ULONG CountY;
+    ULONG CountCharsX;
+    ULONG CountCharsY;
+    ULONG FillAttribute;
+   
+    ULONG WindowFlags;
+    ULONG ShowWindowFlags;
+    UNICODE_STRING WindowTitle;
+    UNICODE_STRING DesktopInfo;
+    UNICODE_STRING ShellInfo;
+    UNICODE_STRING RuntimeData;
+
+    RTL_DRIVE_LETTER_CURDIR CurrentDirectories[RTL_MAX_DRIVE_LETTERS];
+    ULONG EnvironmentSize;
+    ULONG EnvironmentVersion;
+    PVOID PackageDependencyData;
+    ULONG ProcessGroupId;
+    ULONG LoaderThreads;
 } RTL_USER_PROCESS_PARAMETERS, * PRTL_USER_PROCESS_PARAMETERS;
 
 typedef struct _PEB_LDR_DATA {
@@ -818,3 +877,151 @@ struct LDRP_FILENAME_BUFFER
     UNICODE_STRING pFileName;
     wchar_t FileName[128]{};
 };
+
+enum SECTION_INHERIT
+{
+    ViewShare = 1,
+    ViewUnmap = 2
+};
+
+/*
+struct MEM_EXTENDED_PARAMETER
+{
+    PVOID Type;
+    PHANDLE pHandle;
+    HANDLE Handle;
+};
+*/
+
+#define SEC_NO_FLAGS   0x000
+
+/* Tells the OS to allocate space for this section when loading.
+This is clear for a section containing debug information
+only. */
+#define SEC_ALLOC      0x001
+
+/* Tells the OS to load the section from the file when loading.
+This is clear for a .bss section. */
+#define SEC_LOAD       0x002
+
+/* The section contains data still to be relocated, so there is
+some relocation information too. */
+#define SEC_RELOC      0x004
+
+#if 0   /* Obsolete ? */
+#define SEC_BALIGN     0x008
+#endif
+
+/* A signal to the OS that the section contains read only
+data. */
+#define SEC_READONLY   0x010
+
+/* The section contains code only. */
+#define SEC_CODE       0x020
+
+/* The section contains data only. */
+#define SEC_DATA       0x040
+
+/* The section will reside in ROM. */
+#define SEC_ROM        0x080
+
+/* The section contains constructor information. This section
+type is used by the linker to create lists of constructors and
+destructors used by g++. When a back end sees a symbol
+which should be used in a constructor list, it creates a new
+section for the type of name (e.g., __CTOR_LIST__), attaches
+the symbol to it, and builds a relocation. To build the lists
+of constructors, all the linker has to do is catenate all the
+sections called __CTOR_LIST__ and relocate the data
+contained within - exactly the operations it would peform on
+standard data. */
+#define SEC_CONSTRUCTOR 0x100
+
+/* The section is a constuctor, and should be placed at the
+end of the text, data, or bss section(?). */
+#define SEC_CONSTRUCTOR_TEXT 0x1100
+#define SEC_CONSTRUCTOR_DATA 0x2100
+#define SEC_CONSTRUCTOR_BSS  0x3100
+
+/* The section has contents - a data section could be
+SEC_ALLOC | SEC_HAS_CONTENTS; a debug section could be
+SEC_HAS_CONTENTS */
+#define SEC_HAS_CONTENTS 0x200
+
+/* An instruction to the linker to not output the section
+even if it has information which would normally be written. */
+#define SEC_NEVER_LOAD 0x400
+
+/* The section is a COFF shared library section.  This flag is
+only for the linker.  If this type of section appears in
+the input file, the linker must copy it to the output file
+without changing the vma or size.  FIXME: Although this
+was originally intended to be general, it really is COFF
+specific (and the flag was renamed to indicate this).  It
+might be cleaner to have some more general mechanism to
+allow the back end to control what the linker does with
+sections. */
+#define SEC_COFF_SHARED_LIBRARY 0x800
+
+/* The section contains common symbols (symbols may be defined
+multiple times, the value of a symbol is the amount of
+space it requires, and the largest symbol value is the one
+used).  Most targets have exactly one of these (which we
+translate to bfd_com_section_ptr), but ECOFF has two. */
+#define SEC_IS_COMMON 0x8000
+
+/* The section contains only debugging information.  For
+example, this is set for ELF .debug and .stab sections.
+strip tests this flag to see if a section can be
+discarded. */
+#define SEC_DEBUGGING 0x10000
+
+/* The contents of this section are held in memory pointed to
+by the contents field.  This is checked by
+bfd_get_section_contents, and the data is retrieved from
+memory if appropriate.  */
+#define SEC_IN_MEMORY 0x20000
+
+/* The contents of this section are to be excluded by the
+linker for executable and shared objects unless those
+objects are to be further relocated.  */
+#define SEC_EXCLUDE 0x40000
+
+/* The contents of this section are to be sorted by the
+based on the address specified in the associated symbol
+table.  */
+#define SEC_SORT_ENTRIES 0x80000
+
+/* When linking, duplicate sections of the same name should be
+discarded, rather than being combined into a single section as
+is usually done.  This is similar to how common symbols are
+handled.  See SEC_LINK_DUPLICATES below.  */
+#define SEC_LINK_ONCE 0x100000
+
+/* If SEC_LINK_ONCE is set, this bitfield describes how the linker
+should handle duplicate sections.  */
+#define SEC_LINK_DUPLICATES 0x600000
+
+/* This value for SEC_LINK_DUPLICATES means that duplicate
+sections with the same name should simply be discarded. */
+#define SEC_LINK_DUPLICATES_DISCARD 0x0
+
+/* This value for SEC_LINK_DUPLICATES means that the linker
+should warn if there are any duplicate sections, although
+it should still only link one copy.  */
+#define SEC_LINK_DUPLICATES_ONE_ONLY 0x200000
+
+/* This value for SEC_LINK_DUPLICATES means that the linker
+should warn if any duplicate sections are a different size.  */
+#define SEC_LINK_DUPLICATES_SAME_SIZE 0x400000
+
+/* This value for SEC_LINK_DUPLICATES means that the linker
+should warn if any duplicate sections contain different
+contents.  */
+#define SEC_LINK_DUPLICATES_SAME_CONTENTS 0x600000
+
+/* This section was created by the linker as part of dynamic
+relocation or other arcane processing.  It is skipped when
+going through the first-pass output, trusting that someone
+else up the line will take care of it later.  */
+#define SEC_LINKER_CREATED 0x800000

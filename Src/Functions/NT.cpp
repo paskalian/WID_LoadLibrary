@@ -1,6 +1,7 @@
 #include "NT.h"
 
 // Implemented.
+// Variables
 DWORD*                  LdrpPolicyBits                  = nullptr;
 HANDLE*                 LdrpMainThreadToken             = nullptr;
 DWORD*                  LdrInitState                    = nullptr;
@@ -18,7 +19,14 @@ DWORD*                  UseWOW64                        = nullptr;
 PRTL_SRWLOCK			LdrpModuleDatatableLock         = nullptr;
 PHANDLE					qword_17E238                    = nullptr;
 LDR_DATA_TABLE_ENTRY**  LdrpImageEntry                  = nullptr;
+PUNICODE_STRING			LdrpKernel32DllName             = nullptr;
+UINT_PTR*               LdrpAppHeaders                  = nullptr;
+PHANDLE					LdrpLargePageDllKeyHandle       = nullptr;
+ULONG**                 LdrpLockMemoryPrivilege         = nullptr;
+ULONG64*                LdrpMaximumUserModeAddress      = nullptr;
+UINT_PTR*               LdrpMapAndSnapWork              = nullptr;
 
+// Functions
 PEB* NtCurrentPeb()
 {
 	return NtCurrentTeb()->ProcessEnvironmentBlock;
@@ -93,6 +101,25 @@ USHORT __fastcall LdrpGetBaseNameFromFullName(PUNICODE_STRING BaseName, PUNICODE
     return Return;
 }
 
+PWCHAR __fastcall RtlGetNtSystemRoot()
+{
+    if (RtlGetCurrentServiceSessionId())
+        return (PWCHAR)((char*)NtCurrentPeb()->SharedData + 30);
+    else
+        return kUserSharedData->NtSystemRoot;
+}
+
+BOOLEAN __fastcall LdrpHpatAllocationOptOut(PUNICODE_STRING FullDllName)
+{
+    UNICODE_STRING NtString; // [rsp+30h] [rbp-18h] BYREF
+
+    if ((NtCurrentPeb()->ProcessParameters->Flags & 0x2000000) == 0 || *FullDllName->Buffer == '\\')
+        return 0;
+    PWSTR NtSystemRoot = RtlGetNtSystemRoot();
+    RtlInitUnicodeStringEx(&NtString, NtSystemRoot);
+    return FullDllName->Length < NtString.Length || RtlCompareUnicodeStrings(FullDllName->Buffer, NtString.Length >> 1, NtString.Buffer, NtString.Length >> 1, 1u) != 0;
+}
+
 // Implemented inside LOADLIBRARY class to use WID_HIDDEN
 NTSTATUS __fastcall WID::Loader::LOADLIBRARY::LdrpThreadTokenSetMainThreadToken()
 {
@@ -128,7 +155,7 @@ LDR_DATA_TABLE_ENTRY* __fastcall WID::Loader::LOADLIBRARY::LdrpHandleReplacedMod
         LDRP_LOAD_CONTEXT* LoadContext = (LDRP_LOAD_CONTEXT*)LdrDataTableEntry->LoadContext;
         if (LoadContext)
         {
-            if ((LoadContext->Flags & 0x80000) == 0 && (LDR_DATA_TABLE_ENTRY*)LoadContext->WorkQueueListEntry.Flink != LdrDataTableEntry)
+            if ((LoadContext->Flags & SEC_64K_PAGES) == 0 && (LDR_DATA_TABLE_ENTRY*)LoadContext->WorkQueueListEntry.Flink != LdrDataTableEntry)
             {
                 Return = (LDR_DATA_TABLE_ENTRY*)LoadContext->WorkQueueListEntry.Flink;
                 LoadContext->WorkQueueListEntry.Flink = &LdrDataTableEntry->InLoadOrderLinks;
@@ -256,6 +283,10 @@ tNtRaiseHardError                   NtRaiseHardError                    = nullpt
 tRtlImageNtHeaderEx                 RtlImageNtHeaderEx                  = nullptr;
 tRtlAcquireSRWLockExclusive         RtlAcquireSRWLockExclusive          = nullptr;
 tRtlReleaseSRWLockExclusive         RtlReleaseSRWLockExclusive          = nullptr;
+tRtlEqualUnicodeString              RtlEqualUnicodeString               = nullptr;
+tRtlAcquirePrivilege                RtlAcquirePrivilege                 = nullptr;
+tRtlReleasePrivilege                RtlReleasePrivilege                 = nullptr;
+tRtlCompareUnicodeStrings           RtlCompareUnicodeStrings            = nullptr;
 
 // Signatured
 tLdrpLogInternal			                LdrpLogInternal				            = nullptr;
@@ -297,10 +328,11 @@ tLdrpGetFullPath                            LdrpGetFullPath                     
 tLdrpAllocateUnicodeString                  LdrpAllocateUnicodeString               = nullptr;
 tLdrpAppendUnicodeStringToFilenameBuffer    LdrpAppendUnicodeStringToFilenameBuffer = nullptr;
 tLdrpGetNtPathFromDosPath                   LdrpGetNtPathFromDosPath                = nullptr;
-tLdrpMinimalMapModule                       LdrpMinimalMapModule                    = nullptr;
 tLdrpFindLoadedDllByNameLockHeld            LdrpFindLoadedDllByNameLockHeld         = nullptr;
 tLdrpFindLoadedDllByMappingLockHeld         LdrpFindLoadedDllByMappingLockHeld      = nullptr;
 tLdrpInsertDataTableEntry                   LdrpInsertDataTableEntry                = nullptr;
 tLdrpInsertModuleToIndexLockHeld            LdrpInsertModuleToIndexLockHeld         = nullptr;
 tLdrpLogEtwHotPatchStatus                   LdrpLogEtwHotPatchStatus                = nullptr;
 tLdrpLogNewDllLoad                          LdrpLogNewDllLoad                       = nullptr;
+tLdrpProcessMachineMismatch                 LdrpProcessMachineMismatch              = nullptr;
+tRtlQueryImageFileKeyOption                 RtlQueryImageFileKeyOption              = nullptr;

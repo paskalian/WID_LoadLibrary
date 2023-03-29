@@ -43,10 +43,11 @@ LOADLIBRARY::LOADLIBRARY(TCHAR* DllPath, DWORD Flags, LOADTYPE LoadType)
 	if (Status = Load(), NT_SUCCESS(Status))
 	{
 		WID_DBG( printf("[WID] >> (Path: %s), (Flags: %lu) load successful.\n", DllPath, Flags); )
+		WID_DBG( printf("[WID] >> Base address: %p.\n", DllHandle); )
 	}
 	else
 	{
-		WID_DBG( printf("[WID] >> (Path: %s), (Flags: %lu) load failed.\n", DllPath, Flags); )
+		WID_DBG( printf("[WID] >> (Path: %s), (Flags: %lu) load failed, err: 0x%X.\n", DllPath, Flags, Status); )
 	}
 }
 
@@ -418,7 +419,6 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpLoadDllInternal(PUNICODE_STRING FullPath, 
 			Status = LdrpFindLoadedDllByHandle(Zero, &LdrEntry, 0);
 			if (!NT_SUCCESS(Status))
 			{
-				// FREE_DLLNAMEPREPROCANDRETURN;
 				if (FullPath->Buffer)
 					LdrpFreeUnicodeString(FullPath);
 
@@ -681,7 +681,7 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpMapDllFullPath(PLDRP_LOAD_CONTEXT LoadCont
 {
 	NTSTATUS Status;
 	
-	LDR_DATA_TABLE_ENTRY* LdrEntry = (LDR_DATA_TABLE_ENTRY*)LoadContext->WorkQueueListEntry.Flink;
+	LDR_DATA_TABLE_ENTRY* DllEntry = (LDR_DATA_TABLE_ENTRY*)LoadContext->WorkQueueListEntry.Flink;
 	
 
 	/*
@@ -700,7 +700,8 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpMapDllFullPath(PLDRP_LOAD_CONTEXT LoadCont
 	FileNameBuffer.pFileName.MaximumLength = MAX_PATH - 4;
 	//FileNameBuffer.FileName[0] = 0;
 
-	Status = LdrpResolveDllName(LoadContext, &FileNameBuffer, &LdrEntry->BaseDllName, &LdrEntry->FullDllName, LoadContext->Flags);
+	// Sets the according members of the LdrEntry (DllEntry)
+	Status = LdrpResolveDllName(LoadContext, &FileNameBuffer, &DllEntry->BaseDllName, &DllEntry->FullDllName, LoadContext->Flags);
 	do
 	{
 		if (LoadContext->UnknownPtr)
@@ -710,16 +711,18 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpMapDllFullPath(PLDRP_LOAD_CONTEXT LoadCont
 		}
 		else
 		{
-			Status = LdrpAppCompatRedirect(LoadContext, &LdrEntry->FullDllName, &LdrEntry->BaseDllName, &FileNameBuffer, Status);
+			Status = LdrpAppCompatRedirect(LoadContext, &DllEntry->FullDllName, &DllEntry->BaseDllName, &FileNameBuffer, Status);
 			if (!NT_SUCCESS(Status))
 				break;
 
 			// Hashes the dll name
-			DWORD BaseDllNameHash = LdrpHashUnicodeString(&LdrEntry->BaseDllName);
-			LdrEntry->BaseNameHashValue = BaseDllNameHash;
+			DWORD BaseDllNameHash = LdrpHashUnicodeString(&DllEntry->BaseDllName);
+			DllEntry->BaseNameHashValue = BaseDllNameHash;
 
 			LDR_DATA_TABLE_ENTRY* LoadedDll = nullptr;
-			LdrpFindExistingModule(&LdrEntry->BaseDllName, &LdrEntry->FullDllName, LoadContext->Flags, BaseDllNameHash, &LoadedDll);
+
+			// Most likely checks if the dll was already mapped/loaded.
+			LdrpFindExistingModule(&DllEntry->BaseDllName, &DllEntry->FullDllName, LoadContext->Flags, BaseDllNameHash, &LoadedDll);
 			if (LoadedDll)
 			{
 				LdrpLoadContextReplaceModule(LoadContext, LoadedDll);
@@ -727,6 +730,7 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpMapDllFullPath(PLDRP_LOAD_CONTEXT LoadCont
 			}
 		}
 
+		// After this function the dll is mapped.
 		Status = fLdrpMapDllNtFileName(LoadContext, &FileNameBuffer);
 		if (Status == STATUS_IMAGE_MACHINE_TYPE_MISMATCH)
 			Status = STATUS_INVALID_IMAGE_FORMAT;
@@ -749,13 +753,13 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpMapDllNtFileName(PLDRP_LOAD_CONTEXT LoadCo
 {
 	NTSTATUS Status;
 
-	LDR_DATA_TABLE_ENTRY* LdrEntry = (LDR_DATA_TABLE_ENTRY*)LoadContext->WorkQueueListEntry.Flink;
+	LDR_DATA_TABLE_ENTRY* DllEntry = (LDR_DATA_TABLE_ENTRY*)LoadContext->WorkQueueListEntry.Flink;
 	INT64 UnknownPtr = LoadContext->UnknownPtr;
 	if (LdrpCheckForRetryLoading(LoadContext, 0))
 		return STATUS_RETRY;
 
-	PUNICODE_STRING FullDllName = &LdrEntry->FullDllName;
-	WID_HIDDEN( LdrpLogDllState((ULONGLONG)LdrEntry->DllBase, (PUNICODE_STRING)&LdrEntry->FullDllName, 0x14A5); )
+	PUNICODE_STRING FullDllName = &DllEntry->FullDllName;
+	WID_HIDDEN( LdrpLogDllState((ULONGLONG)DllEntry->DllBase, (PUNICODE_STRING)&DllEntry->FullDllName, 0x14A5); )
 	//OBJ_CASE_INSENSITIVE 
 	ULONG ObjAttributes = OBJ_CASE_INSENSITIVE;
 	if (!*LdrpUseImpersonatedDeviceMap)
@@ -873,30 +877,31 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpMapDllWithSectionHandle(PLDRP_LOAD_CONTEXT
 		
 	int v19[14];
 	
+	LDR_DATA_TABLE_ENTRY* LdrEntry2;
 	LDR_DATA_TABLE_ENTRY* LdrEntry3;
-	LDR_DATA_TABLE_ENTRY* LdrEntry4;
 
-	Status = LdrpMinimalMapModule(LoadContext, SectionHandle);
+	// Mapping mechanism.
+	Status = fLdrpMinimalMapModule(LoadContext, SectionHandle);
 	if (Status == STATUS_IMAGE_MACHINE_TYPE_MISMATCH)
 		return Status;
 
 	if (!NT_SUCCESS(Status))
 		return Status;
 
-	LDR_DATA_TABLE_ENTRY* LdrEntry = (LDR_DATA_TABLE_ENTRY*)LoadContext->WorkQueueListEntry.Flink;
+	LDR_DATA_TABLE_ENTRY* DllEntry = (LDR_DATA_TABLE_ENTRY*)LoadContext->WorkQueueListEntry.Flink;
 	ULONG64 Size = LoadContext->Size;
 	PIMAGE_NT_HEADERS OutHeaders;
-	Status = RtlImageNtHeaderEx(0, LdrEntry->DllBase, Size, &OutHeaders);
+	Status = RtlImageNtHeaderEx(0, DllEntry->DllBase, Size, &OutHeaders);
 	if (!NT_SUCCESS(Status))
 		return Status;
 
-	LDR_DATA_TABLE_ENTRY* LdrEntry2 = 0;
+	LDR_DATA_TABLE_ENTRY* LdrEntry = 0;
 	if ((LoadContext->Flags & SEC_FILE) != 0)
 	{
 		Status = STATUS_SUCCESS;
-		LdrEntry->TimeDateStamp = OutHeaders->FileHeader.TimeDateStamp;
-		LdrEntry->CheckSum = OutHeaders->OptionalHeader.CheckSum;
-		LdrEntry->SizeOfImage = OutHeaders->OptionalHeader.SizeOfImage;
+		DllEntry->TimeDateStamp = OutHeaders->FileHeader.TimeDateStamp;
+		DllEntry->CheckSum = OutHeaders->OptionalHeader.CheckSum;
+		DllEntry->SizeOfImage = OutHeaders->OptionalHeader.SizeOfImage;
 	}
 	else
 	{
@@ -904,35 +909,35 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpMapDllWithSectionHandle(PLDRP_LOAD_CONTEXT
 		ULONG64 Flags = (LoadContext->Flags);
 		PUNICODE_STRING FullDllName_2 = 0;
 		if ((Flags & 0x20) == 0)
-			FullDllName_2 = &LdrEntry->FullDllName;
-		Status = LdrpFindLoadedDllByNameLockHeld(&LdrEntry->BaseDllName, FullDllName_2, Flags, &LdrEntry2, LdrEntry->BaseNameHashValue);
+			FullDllName_2 = &DllEntry->FullDllName;
+		Status = LdrpFindLoadedDllByNameLockHeld(&DllEntry->BaseDllName, FullDllName_2, Flags, &LdrEntry, DllEntry->BaseNameHashValue);
 		if (Status == STATUS_DLL_NOT_FOUND)
 		{
-			PIMAGE_DOS_HEADER DllBase = LdrEntry->DllBase;
+			PIMAGE_DOS_HEADER DllBase = DllEntry->DllBase;
 			v19[0] = OutHeaders->FileHeader.TimeDateStamp;
 			v19[1] = OutHeaders->OptionalHeader.SizeOfImage;
-			LdrpFindLoadedDllByMappingLockHeld(DllBase, OutHeaders, (unsigned int*)v19, &LdrEntry2);
+			LdrpFindLoadedDllByMappingLockHeld(DllBase, OutHeaders, (unsigned int*)v19, &LdrEntry);
 		}
 
-		if (!LdrEntry2)
+		if (!LdrEntry)
 		{
-			LdrpInsertDataTableEntry(LdrEntry);
-			LdrpInsertModuleToIndexLockHeld(LdrEntry, OutHeaders);
+			LdrpInsertDataTableEntry(DllEntry);
+			LdrpInsertModuleToIndexLockHeld(DllEntry, OutHeaders);
 		}
 
 		RtlReleaseSRWLockExclusive(LdrpModuleDatatableLock);
-		if (LdrEntry2)
+		if (LdrEntry)
 		{
-			LdrEntry3 = (LDR_DATA_TABLE_ENTRY*)LoadContext->WorkQueueListEntry.Flink;
-			if (LdrEntry3->LoadReason != LoadReasonPatchImage || LdrEntry2->LoadReason == LoadReasonPatchImage)
+			LdrEntry2 = (LDR_DATA_TABLE_ENTRY*)LoadContext->WorkQueueListEntry.Flink;
+			if (LdrEntry2->LoadReason != LoadReasonPatchImage || LdrEntry->LoadReason == LoadReasonPatchImage)
 			{
-				LdrpLoadContextReplaceModule(LoadContext, LdrEntry2);
+				LdrpLoadContextReplaceModule(LoadContext, LdrEntry);
 			}
 			else
 			{
 				Status = STATUS_IMAGE_LOADED_AS_PATCH_IMAGE;
-				LdrpLogEtwHotPatchStatus(&(*LdrpImageEntry)->BaseDllName, LoadContext->Entry, &LdrEntry3->FullDllName, STATUS_IMAGE_LOADED_AS_PATCH_IMAGE, 3);
-				LdrpDereferenceModule(LdrEntry2);
+				WID_HIDDEN( LdrpLogEtwHotPatchStatus(&(*LdrpImageEntry)->BaseDllName, LoadContext->Entry, &LdrEntry2->FullDllName, STATUS_IMAGE_LOADED_AS_PATCH_IMAGE, 3); )
+				LdrpDereferenceModule(LdrEntry);
 			}
 			return Status;
 		}
@@ -942,21 +947,21 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpMapDllWithSectionHandle(PLDRP_LOAD_CONTEXT
 	Status = fLdrpCompleteMapModule(LoadContext, OutHeaders, Status);
 	if (NT_SUCCESS(Status))
 	{
-		Status = fLdrpProcessMappedModule(LdrEntry, LoadContext->Flags, 1);
+		Status = fLdrpProcessMappedModule(DllEntry, LoadContext->Flags, 1);
 		if (NT_SUCCESS(Status))
 		{
-			WID_HIDDEN( LdrpLogNewDllLoad(LoadContext->Entry, LdrEntry); )
-			LdrEntry4 = LoadContext->Entry;
-			if (LdrEntry4)
-				LdrEntry->ParentDllBase = LdrEntry4->DllBase;
+			WID_HIDDEN( LdrpLogNewDllLoad(LoadContext->Entry, DllEntry); )
+			LdrEntry3 = LoadContext->Entry;
+			if (LdrEntry3)
+				DllEntry->ParentDllBase = LdrEntry3->DllBase;
 			BOOLEAN DllBasesEqual = FALSE;
-			if (LdrEntry->LoadReason == LoadReasonPatchImage && *LdrpImageEntry)
-				DllBasesEqual = LdrEntry->ParentDllBase == (*LdrpImageEntry)->DllBase;
-			if ((LoadContext->Flags & MEM_IMAGE) || (LdrEntry->FlagGroup[0] & ImageDll) || DllBasesEqual)
+			if (DllEntry->LoadReason == LoadReasonPatchImage && *LdrpImageEntry)
+				DllBasesEqual = DllEntry->ParentDllBase == (*LdrpImageEntry)->DllBase;
+			if ((LoadContext->Flags & MEM_IMAGE) || (DllEntry->FlagGroup[0] & ImageDll) || DllBasesEqual)
 			{
-				if ((LdrEntry->Flags & CorILOnly))
+				if ((DllEntry->Flags & CorILOnly))
 				{
-					return fLdrpCorProcessImports(LdrEntry);
+					return fLdrpCorProcessImports(DllEntry);
 				}
 				else
 				{
@@ -966,13 +971,123 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpMapDllWithSectionHandle(PLDRP_LOAD_CONTEXT
 			}
 			else
 			{
-				LdrpLogDllState((ULONG)LdrEntry->DllBase, &LdrEntry->FullDllName, 0x14AEu);
+				WID_HIDDEN( LdrpLogDllState((ULONG)DllEntry->DllBase, &DllEntry->FullDllName, 0x14AEu); )
 				Status = STATUS_SUCCESS;
-				LdrEntry->DdagNode->State = LdrModulesReadyToRun;
+				DllEntry->DdagNode->State = LdrModulesReadyToRun;
 			}
 		}
 	}
 	return Status;
+}
+
+NTSTATUS __fastcall LOADLIBRARY::fLdrpMinimalMapModule(PLDRP_LOAD_CONTEXT LoadContext, HANDLE SectionHandle)
+{
+	NTSTATUS Status;
+
+	BOOLEAN UnknownBool;
+	int Flags;
+	int Flags2;
+	ULONG ProtectFlags;
+	wchar_t* Buffer;
+	MEM_EXTENDED_PARAMETER MemExtendedParam;
+	
+	void* Data;
+
+	LDR_DATA_TABLE_ENTRY* DllEntry = (LDR_DATA_TABLE_ENTRY*)LoadContext->WorkQueueListEntry.Flink;
+
+	WID_HIDDEN( LdrpLogInternal("minkernel\\ntdll\\ldrmap.c", 0x2BC, "LdrpMinimalMapModule", 3u, "DLL name: %wZ\n", &DllEntry->FullDllName); )
+	if (!RtlEqualUnicodeString(&DllEntry->BaseDllName, LdrpKernel32DllName, TRUE) || (UnknownBool = 1, (*((BYTE*)*LdrpAppHeaders + 0x16) & 0x20) == 0))
+	{
+		UnknownBool = 0;
+	}
+	PVOID ReturnedState = nullptr;
+	Flags = DontRelocate;
+	if (!UnknownBool)
+	{
+		if (*LdrpLargePageDllKeyHandle)
+		{
+			Buffer = DllEntry->BaseDllName.Buffer;
+			Data = 0;
+			RtlQueryImageFileKeyOption(*LdrpLargePageDllKeyHandle, Buffer, 4, &Data, 4, 0);
+			if (Data)
+			{
+				if (NT_SUCCESS(RtlAcquirePrivilege(*LdrpLockMemoryPrivilege, 1, 0, &ReturnedState)))
+					Flags = 0x20000000;
+			}
+		}
+	}
+
+	TEB* TEB = NtCurrentTeb();
+	LoadContext->Size = 0;
+	Data = TEB->NtTib.ArbitraryUserPointer;
+	TEB->NtTib.ArbitraryUserPointer = DllEntry->FullDllName.Buffer;
+
+	ULONG64 MaxUsermodeAddress;
+
+	ProtectFlags = (LoadContext->Flags & SEC_LINKER_CREATED) != 0 ? PAGE_READONLY : PAGE_EXECUTE_WRITECOPY;
+	Flags2 = Flags | DontCallForThreads;
+	if ((LoadContext->Flags & SEC_LINKER_CREATED) == 0)
+		Flags2 = Flags;
+	if ((LoadContext->Flags & SEC_COFF_SHARED_LIBRARY) != 0)
+	{
+		MaxUsermodeAddress = *LdrpMaximumUserModeAddress;
+		MemExtendedParam.Handle = 0;
+		MemExtendedParam.Pointer = &MemExtendedParam.Handle;
+		MemExtendedParam.Type = 1;
+		Status = ZwMapViewOfSectionEx(SectionHandle, (HANDLE)-1, &DllEntry->DllBase, 0, (PULONG)&LoadContext->Size, Flags2, ProtectFlags, &MemExtendedParam, 1);
+	}
+	else
+	{ 
+		// R9 register isn't used by the function (or I couldn't see) but it must be passed anyways so I did.
+		// After this function our dll is mapped, DllEntry->DllBase receives the base address.
+		Status = fLdrpMapViewOfSection(SectionHandle, ProtectFlags, &DllEntry->DllBase, 0x4B, (PULONG)&LoadContext->Size, Flags2, ProtectFlags, &DllEntry->FullDllName);
+	}
+
+	TEB->NtTib.ArbitraryUserPointer = Data;
+	if (Flags2 == 0x20000000)
+		RtlReleasePrivilege(ReturnedState);
+	switch (Status)
+	{
+	case STATUS_IMAGE_MACHINE_TYPE_MISMATCH:                           
+		Status = LdrpProcessMachineMismatch(LoadContext);
+		break;
+	case STATUS_IMAGE_NOT_AT_BASE:
+	case STATUS_IMAGE_AT_DIFFERENT_BASE:
+		if (!LoadContext->UnknownPtr && *LdrpMapAndSnapWork)
+		{
+			if (LdrpCheckForRetryLoading(LoadContext, TRUE))
+			{
+				Status = STATUS_RETRY;
+			}
+			else if (UnknownBool)
+			{
+				Status = STATUS_CONFLICTING_ADDRESSES;
+			}
+		}
+		break;
+	}
+
+	if (DllEntry->DllBase && (!NT_SUCCESS(Status) || Status == STATUS_IMAGE_MACHINE_TYPE_MISMATCH))
+	{
+		NtUnmapViewOfSection((HANDLE)-1, DllEntry->DllBase);
+		DllEntry->DllBase = 0;
+	}
+
+	WID_HIDDEN( LdrpLogInternal("minkernel\\ntdll\\ldrmap.c", 0x38D, "LdrpMinimalMapModule", 4, "Status: 0x%08lx\n", Status); )
+	return Status;
+}
+
+NTSTATUS __fastcall LOADLIBRARY::fLdrpMapViewOfSection(HANDLE SectionHandle, ULONG ProtectFlags, PIMAGE_DOS_HEADER* BaseAddress, DWORD Unknown, PULONG ViewSize, ULONG AllocationType, ULONG Win32Protect, PUNICODE_STRING FullDllName)
+{
+	MEM_EXTENDED_PARAMETER MemExtendedParam; // [rsp+50h] [rbp-18h] BYREF
+
+	// I believe this check is to seperate between Windows dlls and user-made dlls. Goes in if Windows dll.
+	if (!LdrpHpatAllocationOptOut(FullDllName))
+		return ZwMapViewOfSection(SectionHandle, (HANDLE)-1, BaseAddress, 0, 0, 0, ViewSize, ViewShare, AllocationType, Win32Protect);
+	// User-made dlls
+	MemExtendedParam.Type = 5;
+	MemExtendedParam.Pointer = (PHANDLE)128;
+	return ZwMapViewOfSectionEx(SectionHandle, (HANDLE)-1, BaseAddress, 0, ViewSize, AllocationType, Win32Protect, &MemExtendedParam, 1);
 }
 
 NTSTATUS __fastcall LOADLIBRARY::fLdrpCompleteMapModule(PLDRP_LOAD_CONTEXT LoadContext, PIMAGE_NT_HEADERS OutHeaders, NTSTATUS Status)

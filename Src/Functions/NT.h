@@ -7,9 +7,12 @@
 
 #define NT_SUCCESS(x) ((x)>=0)
 #define STATUS_SUCCESS						0x0
+#define STATUS_IMAGE_NOT_AT_BASE			0x40000003
+#define STATUS_IMAGE_AT_DIFFERENT_BASE		0x40000036
 #define STATUS_IMAGE_MACHINE_TYPE_MISMATCH	0x4000000E
 #define STATUS_DEVICE_OFF_LINE				0x80000010
 #define STATUS_UNSUCCESSFUL					0xC0000001
+#define STATUS_CONFLICTING_ADDRESSES		0xC0000018
 #define STATUS_ACCESS_DENIED				0xC0000022
 #define STATUS_OBJECT_NAME_NOT_FOUND		0xC0000034
 #define STATUS_OBJECT_PATH_NOT_FOUND		0xC000003A
@@ -45,16 +48,28 @@ extern DWORD*					UseWOW64;
 extern PRTL_SRWLOCK				LdrpModuleDatatableLock;
 extern PHANDLE					qword_17E238;
 extern LDR_DATA_TABLE_ENTRY**	LdrpImageEntry;
+extern PUNICODE_STRING			LdrpKernel32DllName;
+extern UINT_PTR*				LdrpAppHeaders;
+extern PHANDLE					LdrpLargePageDllKeyHandle;
+extern ULONG**					LdrpLockMemoryPrivilege;
+extern ULONG64*					LdrpMaximumUserModeAddress;
+extern UINT_PTR*				LdrpMapAndSnapWork;
 
 PEB* NtCurrentPeb();
 VOID __fastcall NtdllpFreeStringRoutine(PWCH Buffer);
 VOID __fastcall RtlFreeUnicodeString(PUNICODE_STRING UnicodeString);
 VOID __fastcall LdrpFreeUnicodeString(PUNICODE_STRING String);
 ULONG __fastcall RtlGetCurrentServiceSessionId(VOID);
-extern "C" __int64 __fastcall ZwSystemDebugControl();
-extern "C" __int64 __fastcall NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, OBJECT_ATTRIBUTES* ObjectAttributes, PLARGE_INTEGER MaximumSize, ULONG SectionPageProtection, ULONG AllocationAttributes, HANDLE FileHandle);
 USHORT __fastcall LdrpGetBaseNameFromFullName(PUNICODE_STRING BaseName, PUNICODE_STRING FullName);
+PWCHAR __fastcall RtlGetNtSystemRoot();
+BOOLEAN __fastcall LdrpHpatAllocationOptOut(PUNICODE_STRING FullDllName);
 //NTSTATUS __fastcall LdrpThreadTokenSetMainThreadToken();
+
+extern "C" NTSTATUS __fastcall ZwSystemDebugControl();
+extern "C" NTSTATUS __fastcall NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, OBJECT_ATTRIBUTES * ObjectAttributes, PLARGE_INTEGER MaximumSize, ULONG SectionPageProtection, ULONG AllocationAttributes, HANDLE FileHandle);
+extern "C" NTSTATUS __fastcall ZwMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, PIMAGE_DOS_HEADER * BaseAddress, ULONG64 ZeroBits, ULONG64 CommitSize, PLARGE_INTEGER SectionOffset, PULONG ViewSize, SECTION_INHERIT InheritDisposition, ULONG64 AllocationType, ULONG64 Protect);
+extern "C" NTSTATUS __fastcall ZwMapViewOfSectionEx(HANDLE SectionHandle, HANDLE ProcessHandle, PIMAGE_DOS_HEADER * DllBase, PLARGE_INTEGER a4, PULONG ViewSize, ULONG a6, ULONG a7, MEM_EXTENDED_PARAMETER * MemExtendedParam, ULONG a9);
+extern "C" NTSTATUS __fastcall NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress);
 
 // Planning to implement them all in the future.
 typedef NTSTATUS(__fastcall* tNtOpenThreadToken)(IN HANDLE ThreadHandle, IN ACCESS_MASK DesiredAccess, IN BOOLEAN OpenAsSelf, OUT PHANDLE TokenHandle);
@@ -104,6 +119,19 @@ extern tRtlAcquireSRWLockExclusive RtlAcquireSRWLockExclusive;
 
 typedef NTSTATUS(__fastcall* tRtlReleaseSRWLockExclusive)(PRTL_SRWLOCK SRWLock);
 extern tRtlReleaseSRWLockExclusive RtlReleaseSRWLockExclusive;
+
+typedef NTSTATUS(__fastcall* tRtlEqualUnicodeString)(PUNICODE_STRING String1, PUNICODE_STRING String2, BOOLEAN CaseInSensitive);
+extern tRtlEqualUnicodeString RtlEqualUnicodeString;
+
+typedef NTSTATUS(__fastcall* tRtlAcquirePrivilege)(ULONG* Privilege,ULONG NumPriv,ULONG Flags,PVOID * ReturnedState);
+extern tRtlAcquirePrivilege RtlAcquirePrivilege;
+
+typedef VOID(__fastcall* tRtlReleasePrivilege)(PVOID ReturnedState);
+extern tRtlReleasePrivilege RtlReleasePrivilege;
+
+typedef NTSTATUS(__fastcall* tRtlCompareUnicodeStrings)(PWCH String1, UINT_PTR String1Length, PWCH String2, UINT_PTR String2Length, BOOLEAN CaseInSensitive);
+extern tRtlCompareUnicodeStrings RtlCompareUnicodeStrings;
+
 
 // Signatured
 #define LDRP_LOG_INTERNAL_PATTERN "\x89\x54\x24\x10\x4C\x8B\xDC\x49\x89\x4B\x08"
@@ -262,10 +290,6 @@ extern tLdrpAppendUnicodeStringToFilenameBuffer LdrpAppendUnicodeStringToFilenam
 typedef NTSTATUS(__fastcall* tLdrpGetNtPathFromDosPath)(PUNICODE_STRING DosPath, LDRP_FILENAME_BUFFER* NtPath);
 extern tLdrpGetNtPathFromDosPath LdrpGetNtPathFromDosPath;
 
-#define LDRP_MINIMAL_MAP_MODULE_PATTERN "\x48\x89\x5C\x24\x20\x48\x89\x54\x24\x10\x55\x56\x57\x41\x54\x41\x55\x41\x56\x41\x57\x48\x8B\xEC\x48\x81\xEC\x80\x00\x00\x00"
-typedef NTSTATUS(__fastcall* tLdrpMinimalMapModule)(PLDRP_LOAD_CONTEXT LoadContext, HANDLE SectionHandle);
-extern tLdrpMinimalMapModule LdrpMinimalMapModule;
-
 #define LDRP_FIND_LOADEDDLL_LOCKHELD_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x6C\x24\x10\x48\x89\x74\x24\x18\x57\x41\x54\x41\x55\x41\x56\x41\x57\x48\x83\xEC\x20\x44\x8B\x7C\x24\x70"
 typedef NTSTATUS(__fastcall* tLdrpFindLoadedDllByNameLockHeld)(PUNICODE_STRING BaseDllName, PUNICODE_STRING FullDllName, DWORD Flags, PLDR_DATA_TABLE_ENTRY* pLdrEntry, DWORD BaseNameHashValue);
 extern tLdrpFindLoadedDllByNameLockHeld LdrpFindLoadedDllByNameLockHeld;
@@ -289,3 +313,11 @@ extern tLdrpLogEtwHotPatchStatus LdrpLogEtwHotPatchStatus;
 #define LDRP_LOG_NEWDLL_LOAD_PATTERN "\x48\x8B\xC4\x48\x89\x58\x08\x48\x89\x68\x10\x48\x89\x70\x18\x48\x89\x78\x20\x41\x56\x48\x83\xEC\x30\x48\x8B\xEA\x4C\x8B\xF1"
 typedef PEB*(__fastcall* tLdrpLogNewDllLoad)(LDR_DATA_TABLE_ENTRY* LdrEntry, LDR_DATA_TABLE_ENTRY* LdrEntry2);
 extern tLdrpLogNewDllLoad LdrpLogNewDllLoad;
+
+#define LDRP_PROCESS_MACHINE_MISMATCH_PATTERN "\x40\x53\x55\x57\x48\x83\xEC\x40\x48\x8B\x59\x38"
+typedef NTSTATUS(__fastcall* tLdrpProcessMachineMismatch)(PLDRP_LOAD_CONTEXT LoadContext);
+extern tLdrpProcessMachineMismatch LdrpProcessMachineMismatch;
+
+#define RTL_QUERY_IMAGEFILE_KEYOPT_PATTERN "\x48\x89\x5C\x24\x10\x55\x56\x57\x41\x54\x41\x55\x41\x56\x41\x57\x48\x8D\xAC\x24\xA0\xFC\xFF\xFF"
+typedef NTSTATUS(__fastcall* tRtlQueryImageFileKeyOption)(HANDLE hKey, PCWSTR lpszOption, ULONG dwType, PVOID lpData, ULONG cbData, ULONG* lpcbData);
+extern tRtlQueryImageFileKeyOption RtlQueryImageFileKeyOption;
