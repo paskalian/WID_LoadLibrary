@@ -120,6 +120,76 @@ BOOLEAN __fastcall LdrpHpatAllocationOptOut(PUNICODE_STRING FullDllName)
     return FullDllName->Length < NtString.Length || RtlCompareUnicodeStrings(FullDllName->Buffer, NtString.Length >> 1, NtString.Buffer, NtString.Length >> 1, 1u) != 0;
 }
 
+NTSTATUS __fastcall LdrpCorValidateImage(PIMAGE_DOS_HEADER DosHeader)
+{
+    NTSTATUS Status;
+ 
+    PIMAGE_FILE_HEADER ImageFileHeader;
+    UINT_PTR LastRVASection;
+    Status = RtlpImageDirectoryEntryToDataEx(DosHeader, TRUE, IMAGE_FILE_RELOCS_STRIPPED | IMAGE_FILE_LOCAL_SYMS_STRIPPED, &LastRVASection, (PIMAGE_FILE_HEADER*)&ImageFileHeader);
+    if (!NT_SUCCESS(Status))
+        ImageFileHeader = 0;
+    return ImageFileHeader != 0 ? STATUS_INVALID_IMAGE_FORMAT : 0;
+}
+
+NTSTATUS __fastcall LdrpCorFixupImage(PIMAGE_DOS_HEADER DosHeader)
+{
+    NTSTATUS Status;
+
+    PIMAGE_NT_HEADERS NtHeader = RtlImageNtHeader(DosHeader);
+    ULONG64 LastRVASection;
+    PIMAGE_COR20_HEADER CorHeader;
+    Status = RtlpImageDirectoryEntryToDataEx(DosHeader, 1u, 0xEu, &LastRVASection, &CorHeader);
+    if (Status < 0)
+        CorHeader = 0;
+
+    if (NtHeader->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC && NtHeader->FileHeader.Machine == IMAGE_FILE_MACHINE_I386 && (CorHeader->Flags & 2) == 0)
+    {
+        ULONG64* pSizeOfHeapCommit = &NtHeader->OptionalHeader.SizeOfHeapCommit;
+        PBYTE UnknownCalc =   (PBYTE)&NtHeader->OptionalHeader             +
+                        (32 * NtHeader->FileHeader.NumberOfSections) + 
+                        (8 * NtHeader->FileHeader.NumberOfSections)  + 
+                        NtHeader->FileHeader.SizeOfOptionalHeader;
+
+        UINT_PTR NumberOfBytesToProtect = 0x1000;
+        if ((unsigned __int64)(UnknownCalc - (PBYTE)DosHeader + 0x10) <= 0x1000)
+        {
+            ULONG OldAccessProtection;
+            Status = ZwProtectVirtualMemory((HANDLE)-1, (PVOID*)&DosHeader, (PULONG)&NumberOfBytesToProtect, PAGE_READWRITE, &OldAccessProtection);
+            if (NT_SUCCESS(Status))
+            {
+                memmove(NtHeader->OptionalHeader.DataDirectory, &NtHeader->OptionalHeader.SizeOfHeapCommit, UnknownCalc - (PBYTE)pSizeOfHeapCommit);
+                *(ULONG64*)&NtHeader->OptionalHeader.LoaderFlags = NtHeader->OptionalHeader.SizeOfHeapReserve;
+                *pSizeOfHeapCommit = (NtHeader->OptionalHeader.SizeOfStackCommit) & 0xFFFFFFFF00000000;
+
+                NtHeader->OptionalHeader.SizeOfHeapReserve  = (NtHeader->OptionalHeader.SizeOfStackCommit)  & UINT_MAX;
+                NtHeader->OptionalHeader.SizeOfStackCommit  = (NtHeader->OptionalHeader.SizeOfStackReserve) & 0xFFFFFFFF00000000;
+                NtHeader->OptionalHeader.SizeOfStackReserve = (NtHeader->OptionalHeader.SizeOfStackReserve) & UINT_MAX;
+                NtHeader->OptionalHeader.ImageBase          = (NtHeader->OptionalHeader.ImageBase)          & 0xFFFFFFFF00000000;
+                NtHeader->FileHeader.SizeOfOptionalHeader   += 0x10;
+
+                NtHeader->OptionalHeader.Magic = IMAGE_NT_OPTIONAL_HDR64_MAGIC;
+                ZwProtectVirtualMemory((HANDLE)-1, (PVOID*)&DosHeader, (PULONG)&NumberOfBytesToProtect, OldAccessProtection, &OldAccessProtection);
+            }
+        }
+        else
+        {
+            return STATUS_INVALID_IMAGE_FORMAT;
+        }
+    }
+    else
+    {
+        WORD Machine = NtHeader->FileHeader.Machine;
+        if (Machine < kUserSharedData->ImageNumberLow)
+            return STATUS_INVALID_IMAGE_FORMAT;
+
+        Status = STATUS_SUCCESS;
+        if (Machine > kUserSharedData->ImageNumberHigh)
+            return STATUS_INVALID_IMAGE_FORMAT;
+    }
+    return Status;
+}
+
 // Implemented inside LOADLIBRARY class to use WID_HIDDEN
 NTSTATUS __fastcall WID::Loader::LOADLIBRARY::LdrpThreadTokenSetMainThreadToken()
 {
@@ -287,6 +357,7 @@ tRtlEqualUnicodeString              RtlEqualUnicodeString               = nullpt
 tRtlAcquirePrivilege                RtlAcquirePrivilege                 = nullptr;
 tRtlReleasePrivilege                RtlReleasePrivilege                 = nullptr;
 tRtlCompareUnicodeStrings           RtlCompareUnicodeStrings            = nullptr;
+tRtlImageNtHeader                   RtlImageNtHeader                    = nullptr;
 
 // Signatured
 tLdrpLogInternal			                LdrpLogInternal				            = nullptr;
@@ -336,3 +407,4 @@ tLdrpLogEtwHotPatchStatus                   LdrpLogEtwHotPatchStatus            
 tLdrpLogNewDllLoad                          LdrpLogNewDllLoad                       = nullptr;
 tLdrpProcessMachineMismatch                 LdrpProcessMachineMismatch              = nullptr;
 tRtlQueryImageFileKeyOption                 RtlQueryImageFileKeyOption              = nullptr;
+tRtlpImageDirectoryEntryToDataEx            RtlpImageDirectoryEntryToDataEx = nullptr;

@@ -1092,6 +1092,92 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpMapViewOfSection(HANDLE SectionHandle, ULO
 
 NTSTATUS __fastcall LOADLIBRARY::fLdrpCompleteMapModule(PLDRP_LOAD_CONTEXT LoadContext, PIMAGE_NT_HEADERS OutHeaders, NTSTATUS Status)
 {
+	NTSTATUS ReturnStatus;
+	
+	LDR_DATA_TABLE_ENTRY* DllEntry = (LDR_DATA_TABLE_ENTRY*)LoadContext->WorkQueueListEntry.Flink;
+	PIMAGE_DOS_HEADER DllBase = DllEntry->DllBase;
+
+	PIMAGE_COR20_HEADER CorHeader = nullptr; 
+	ULONG64 LastRVASection = 0;
+	ReturnStatus = RtlpImageDirectoryEntryToDataEx(DllBase, 1, IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR, &LastRVASection, &CorHeader);
+	if (!NT_SUCCESS(ReturnStatus))
+		CorHeader = 0;
+
+	if (!CorHeader)
+		goto NO_CORHEADER;
+
+	if ((LoadContext->Flags & SEC_LINKER_CREATED) != 0)
+		return STATUS_INVALID_IMAGE_FORMAT;
+
+	DWORD NewDllFlags = DllEntry->Flags | CorImage;
+	DllEntry->Flags = NewDllFlags;
+	if ((CorHeader->Flags & 1) == 0 || (DllEntry->Flags = NewDllFlags | CorILOnly, ReturnStatus = LdrpCorValidateImage(DllBase), (NT_SUCCESS(ReturnStatus))
+		&& ((LoadContext->Flags & SEC_LINK_DUPLICATES_ONE_ONLY) == 0 || (ReturnStatus = LdrpCorFixupImage(DllBase), NT_SUCCESS(ReturnStatus)))))
+	{
+	NO_CORHEADER:
+		if ((OutHeaders->FileHeader.Characteristics & IMAGE_FILE_DLL) != 0)
+		{
+			if (NT_SUCCESS(*(BYTE*)&(LoadContext->Flags)) || !NT_SUCCESS(*(BYTE*)&(OutHeaders->OptionalHeader.DllCharacteristics)))
+			{
+				if ((DllEntry->Flags & CorILOnly) == 0 && (Status == STATUS_IMAGE_NOT_AT_BASE || Status == STATUS_IMAGE_AT_DIFFERENT_BASE))
+				{
+					char* UMGlobalLogger = (char*)&kUserSharedData->UserModeGlobalLogger[2];
+					char* UMGlobalLogger_2 = nullptr;
+					char* UMGlobalLoggerP1 = nullptr;
+					char* UMGlobalLoggerP1_2 = nullptr;
+
+					if (RtlGetCurrentServiceSessionId())
+						UMGlobalLogger_2 = (char*)NtCurrentPeb()->SharedData + 0x22A;
+					else
+						UMGlobalLogger_2 = (char*)&kUserSharedData->UserModeGlobalLogger[2];
+
+					UMGlobalLoggerP1 = (char*)&kUserSharedData->UserModeGlobalLogger[2] + 1;
+					if (*(BYTE*)UMGlobalLogger_2 && (NtCurrentPeb()->TracingFlags & LibLoaderTracingEnabled) != 0)
+					{
+						UMGlobalLoggerP1_2 = RtlGetCurrentServiceSessionId() ? (char*)NtCurrentPeb()->SharedData + 0x22B : (char*)UMGlobalLoggerP1;
+
+						// 0x20 is space char.
+						if ((*UMGlobalLoggerP1_2 & ' ') != 0)
+							WID_HIDDEN( LdrpLogEtwEvent(0x1490u, (ULONGLONG)DllBase, 0xFFu, 0xFFu); )
+					}
+
+					if (Status == STATUS_IMAGE_NOT_AT_BASE && (ReturnStatus = fLdrpRelocateImage(DllEntry->DllBase, LoadContext->Size, OutHeaders, &DllEntry->FullDllName), !NT_SUCCESS(ReturnStatus)))
+					{
+						WID_HIDDEN( LdrpLogError(ReturnStatus, 0x1490u, 0, &DllEntry->FullDllName); )
+					}
+					else
+					{
+						if (RtlGetCurrentServiceSessionId())
+							UMGlobalLogger = (char*)NtCurrentPeb()->SharedData + 0x22A;
+
+						if (*(BYTE*)UMGlobalLogger && (NtCurrentPeb()->TracingFlags & LibLoaderTracingEnabled) != 0)
+						{
+							if (RtlGetCurrentServiceSessionId())
+								UMGlobalLoggerP1 = (char*)NtCurrentPeb()->SharedData + 0x22B;
+
+							// 0x20 is space char.
+							if ((*(BYTE*)UMGlobalLoggerP1 & ' ') != 0)
+								WID_HIDDEN( LdrpLogEtwEvent(0x1491u, (ULONGLONG)DllBase, 0xFFu, 0xFFu); )
+						}
+					}
+				}
+			}
+			else
+			{
+				WID_HIDDEN( LdrpLogInternal("minkernel\\ntdll\\ldrmap.c", 1009, "LdrpCompleteMapModule", 0, "Could not validate the crypto signature for DLL %wZ\n", &DllEntry->FullDllName); )
+				return STATUS_INVALID_IMAGE_HASH;
+			}
+		}
+		else
+		{
+			DllEntry->Flags &= ~ImageDll;
+		}
+	}
+	return ReturnStatus;
+}
+
+NTSTATUS __fastcall LOADLIBRARY::fLdrpRelocateImage(PIMAGE_DOS_HEADER DllBase, SIZE_T Size, PIMAGE_NT_HEADERS OutHeaders, PUNICODE_STRING FullDllName)
+{
 	// TO DO.
 
 	return STATUS_SUCCESS;

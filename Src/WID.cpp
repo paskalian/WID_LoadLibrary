@@ -73,6 +73,7 @@ NTSTATUS WID::Init()
 		(RtlAcquirePrivilege					= (tRtlAcquirePrivilege)				GetProcAddress(NtdllModule, "RtlAcquirePrivilege")			,assert(RtlAcquirePrivilege));
 		(RtlReleasePrivilege					= (tRtlReleasePrivilege)				GetProcAddress(NtdllModule, "RtlReleasePrivilege")			,assert(RtlReleasePrivilege));
 		(RtlCompareUnicodeStrings				= (tRtlCompareUnicodeStrings)			GetProcAddress(NtdllModule, "RtlCompareUnicodeStrings")		,assert(RtlCompareUnicodeStrings));
+		(RtlImageNtHeader						= (tRtlImageNtHeader)					GetProcAddress(NtdllModule, "RtlImageNtHeader")				,assert(RtlImageNtHeader));
 
 		// Signatured.
 		// I don't think the signatures will ever change, you can go with the offsets though.
@@ -123,6 +124,7 @@ NTSTATUS WID::Init()
 		(LdrpLogNewDllLoad							= (tLdrpLogNewDllLoad)						Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_LOG_NEWDLL_LOAD_PATTERN,				strlen(LDRP_LOG_NEWDLL_LOAD_PATTERN))				,assert(LdrpLogNewDllLoad));
 		(LdrpProcessMachineMismatch					= (tLdrpProcessMachineMismatch)				Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_PROCESS_MACHINE_MISMATCH_PATTERN,		strlen(LDRP_PROCESS_MACHINE_MISMATCH_PATTERN))		,assert(LdrpProcessMachineMismatch));
 		(RtlQueryImageFileKeyOption					= (tRtlQueryImageFileKeyOption)				Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, RTL_QUERY_IMAGEFILE_KEYOPT_PATTERN,		strlen(RTL_QUERY_IMAGEFILE_KEYOPT_PATTERN))			,assert(RtlQueryImageFileKeyOption));
+		(RtlpImageDirectoryEntryToDataEx			= (tRtlpImageDirectoryEntryToDataEx)		Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, RTLP_IMAGEDIR_ENTRYTODATA_PATTERN,			strlen(RTLP_IMAGEDIR_ENTRYTODATA_PATTERN))			,assert(RtlpImageDirectoryEntryToDataEx));
 
 		WID_DBG( printf("[WID] >> Initialized.\n"); )
 

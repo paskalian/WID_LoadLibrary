@@ -25,6 +25,7 @@
 #define STATUS_NO_APPLICATION_PACKAGE		0xC00001AA
 #define STATUS_NOT_FOUND					0xC0000225
 #define STATUS_RETRY						0xC000022D
+#define STATUS_INVALID_IMAGE_HASH			0xC0000428
 #define STATUS_NEEDS_REMEDIATION			0xC0000462
 #define STATUS_PATCH_CONFLICT				0xC00004AC
 #define STATUS_IMAGE_LOADED_AS_PATCH_IMAGE	0xC00004C0
@@ -63,6 +64,8 @@ ULONG __fastcall RtlGetCurrentServiceSessionId(VOID);
 USHORT __fastcall LdrpGetBaseNameFromFullName(PUNICODE_STRING BaseName, PUNICODE_STRING FullName);
 PWCHAR __fastcall RtlGetNtSystemRoot();
 BOOLEAN __fastcall LdrpHpatAllocationOptOut(PUNICODE_STRING FullDllName);
+NTSTATUS __fastcall LdrpCorValidateImage(PIMAGE_DOS_HEADER DosHeader);
+NTSTATUS __fastcall LdrpCorFixupImage(PIMAGE_DOS_HEADER DosHeader);
 //NTSTATUS __fastcall LdrpThreadTokenSetMainThreadToken();
 
 extern "C" NTSTATUS __fastcall ZwSystemDebugControl();
@@ -70,6 +73,8 @@ extern "C" NTSTATUS __fastcall NtCreateSection(PHANDLE SectionHandle, ACCESS_MAS
 extern "C" NTSTATUS __fastcall ZwMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, PIMAGE_DOS_HEADER * BaseAddress, ULONG64 ZeroBits, ULONG64 CommitSize, PLARGE_INTEGER SectionOffset, PULONG ViewSize, SECTION_INHERIT InheritDisposition, ULONG64 AllocationType, ULONG64 Protect);
 extern "C" NTSTATUS __fastcall ZwMapViewOfSectionEx(HANDLE SectionHandle, HANDLE ProcessHandle, PIMAGE_DOS_HEADER * DllBase, PLARGE_INTEGER a4, PULONG ViewSize, ULONG a6, ULONG a7, MEM_EXTENDED_PARAMETER * MemExtendedParam, ULONG a9);
 extern "C" NTSTATUS __fastcall NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress);
+extern "C" NTSTATUS(__fastcall ZwProtectVirtualMemory)(HANDLE ProcessHandle, PVOID * BaseAddress, PULONG ProtectSize, ULONG NewProtect, PULONG OldProtect);
+
 
 // Planning to implement them all in the future.
 typedef NTSTATUS(__fastcall* tNtOpenThreadToken)(IN HANDLE ThreadHandle, IN ACCESS_MASK DesiredAccess, IN BOOLEAN OpenAsSelf, OUT PHANDLE TokenHandle);
@@ -131,6 +136,9 @@ extern tRtlReleasePrivilege RtlReleasePrivilege;
 
 typedef NTSTATUS(__fastcall* tRtlCompareUnicodeStrings)(PWCH String1, UINT_PTR String1Length, PWCH String2, UINT_PTR String2Length, BOOLEAN CaseInSensitive);
 extern tRtlCompareUnicodeStrings RtlCompareUnicodeStrings;
+
+typedef PIMAGE_NT_HEADERS(__fastcall* tRtlImageNtHeader)(PIMAGE_DOS_HEADER DosHeader);
+extern tRtlImageNtHeader RtlImageNtHeader;
 
 
 // Signatured
@@ -321,3 +329,7 @@ extern tLdrpProcessMachineMismatch LdrpProcessMachineMismatch;
 #define RTL_QUERY_IMAGEFILE_KEYOPT_PATTERN "\x48\x89\x5C\x24\x10\x55\x56\x57\x41\x54\x41\x55\x41\x56\x41\x57\x48\x8D\xAC\x24\xA0\xFC\xFF\xFF"
 typedef NTSTATUS(__fastcall* tRtlQueryImageFileKeyOption)(HANDLE hKey, PCWSTR lpszOption, ULONG dwType, PVOID lpData, ULONG cbData, ULONG* lpcbData);
 extern tRtlQueryImageFileKeyOption RtlQueryImageFileKeyOption;
+
+#define RTLP_IMAGEDIR_ENTRYTODATA_PATTERN "\x4C\x8B\xDC\x49\x89\x5B\x10\x49\x89\x6B\x18\x49\x89\x73\x20\x57\x41\x56\x41\x57\x48\x83\xEC\x20\x4C\x8B\x74\x24\x60"
+typedef NTSTATUS(__fastcall* tRtlpImageDirectoryEntryToDataEx)(PIMAGE_DOS_HEADER DllBase, BOOLEAN Unknown, WORD Characteristics, ULONG64* LastRVASection, PVOID OutHeader);
+extern tRtlpImageDirectoryEntryToDataEx RtlpImageDirectoryEntryToDataEx;
