@@ -12,6 +12,7 @@
 #define STATUS_IMAGE_MACHINE_TYPE_MISMATCH	0x4000000E
 #define STATUS_DEVICE_OFF_LINE				0x80000010
 #define STATUS_UNSUCCESSFUL					0xC0000001
+#define STATUS_NOT_IMPLEMENTED				0xC0000002
 #define STATUS_CONFLICTING_ADDRESSES		0xC0000018
 #define STATUS_ACCESS_DENIED				0xC0000022
 #define STATUS_OBJECT_NAME_NOT_FOUND		0xC0000034
@@ -21,8 +22,12 @@
 #define STATUS_INVALID_IMAGE_FORMAT			0xC000007B
 #define STATUS_NO_TOKEN						0xC000007C
 #define STATUS_INSUFFICIENT_RESOURCES		0xC000009A
+#define STATUS_NOT_SUPPORTED				0xC00000BB
+#define STATUS_INTERNAL_ERROR				0xC00000E5
+#define STATUS_NAME_TOO_LONG				0xC0000106
 #define STATUS_COMMITMENT_LIMIT				0xC000012D
 #define STATUS_NO_APPLICATION_PACKAGE		0xC00001AA
+#define STATUS_RESOURCE_LANG_NOT_FOUND		0xC0000204
 #define STATUS_NOT_FOUND					0xC0000225
 #define STATUS_RETRY						0xC000022D
 #define STATUS_INVALID_IMAGE_HASH			0xC0000428
@@ -30,6 +35,7 @@
 #define STATUS_PATCH_CONFLICT				0xC00004AC
 #define STATUS_IMAGE_LOADED_AS_PATCH_IMAGE	0xC00004C0
 #define STATUS_INVALID_THREAD				0xC000071C
+
 
 // Implemented.
 extern DWORD*					LdrpPolicyBits;
@@ -55,6 +61,18 @@ extern PHANDLE					LdrpLargePageDllKeyHandle;
 extern ULONG**					LdrpLockMemoryPrivilege;
 extern ULONG64*					LdrpMaximumUserModeAddress;
 extern UINT_PTR*				LdrpMapAndSnapWork;
+extern LIST_ENTRY*				LdrpHashTable;
+extern PVOID*					LdrpHeap;
+extern BOOLEAN*					LdrpIsHotPatchingEnabled;
+extern LDR_DATA_TABLE_ENTRY**	LdrpRedirectionModule;
+extern ULONG64**				qword_1993A8;
+extern LONG*					NtdllBaseTag;
+
+typedef NTSTATUS(__fastcall** tLdrpManifestProberRoutine)(PIMAGE_DOS_HEADER Base, PWCHAR, PVOID);
+extern tLdrpManifestProberRoutine LdrpManifestProberRoutine;
+typedef BOOLEAN(__fastcall** tLdrpRedirectionCalloutFunc)(PWCHAR Buffer);
+extern tLdrpRedirectionCalloutFunc LdrpRedirectionCalloutFunc;
+
 
 PEB* NtCurrentPeb();
 VOID __fastcall NtdllpFreeStringRoutine(PWCH Buffer);
@@ -66,6 +84,15 @@ PWCHAR __fastcall RtlGetNtSystemRoot();
 BOOLEAN __fastcall LdrpHpatAllocationOptOut(PUNICODE_STRING FullDllName);
 NTSTATUS __fastcall LdrpCorValidateImage(PIMAGE_DOS_HEADER DosHeader);
 NTSTATUS __fastcall LdrpCorFixupImage(PIMAGE_DOS_HEADER DosHeader);
+NTSTATUS __fastcall LdrpFindLoadedDllByNameLockHeld(PUNICODE_STRING BaseDllName, PUNICODE_STRING FullDllName, ULONG64 Flags, LDR_DATA_TABLE_ENTRY** pLdrEntry, ULONG BaseNameHashValue);
+BOOLEAN __fastcall LdrpIsILOnlyImage(PIMAGE_DOS_HEADER DllBase);
+VOID __fastcall LdrpAddNodeServiceTag(_LDR_DDAG_NODE* DdagNode, ULONG ServiceTag);
+NTSTATUS __fastcall LdrpFindDllActivationContext(LDR_DATA_TABLE_ENTRY* LdrEntry);
+PIMAGE_LOAD_CONFIG_DIRECTORY LdrImageDirectoryEntryToLoadConfig(PIMAGE_DOS_HEADER DllBase);
+BOOLEAN __fastcall LdrpShouldModuleImportBeRedirected(LDR_DATA_TABLE_ENTRY* DllEntry);
+PIMAGE_IMPORT_DESCRIPTOR __fastcall LdrpGetImportDescriptorForSnap(LDRP_LOAD_CONTEXT* LoadContext);
+NTSTATUS __fastcall LdrpMapCleanModuleView(LDRP_LOAD_CONTEXT* LoadContext);
+
 //NTSTATUS __fastcall LdrpThreadTokenSetMainThreadToken();
 
 extern "C" NTSTATUS __fastcall ZwSystemDebugControl();
@@ -73,8 +100,9 @@ extern "C" NTSTATUS __fastcall NtCreateSection(PHANDLE SectionHandle, ACCESS_MAS
 extern "C" NTSTATUS __fastcall ZwMapViewOfSection(HANDLE SectionHandle, HANDLE ProcessHandle, PIMAGE_DOS_HEADER * BaseAddress, ULONG64 ZeroBits, ULONG64 CommitSize, PLARGE_INTEGER SectionOffset, PULONG ViewSize, SECTION_INHERIT InheritDisposition, ULONG64 AllocationType, ULONG64 Protect);
 extern "C" NTSTATUS __fastcall ZwMapViewOfSectionEx(HANDLE SectionHandle, HANDLE ProcessHandle, PIMAGE_DOS_HEADER * DllBase, PLARGE_INTEGER a4, PULONG ViewSize, ULONG a6, ULONG a7, MEM_EXTENDED_PARAMETER * MemExtendedParam, ULONG a9);
 extern "C" NTSTATUS __fastcall NtUnmapViewOfSection(HANDLE ProcessHandle, PVOID BaseAddress);
-extern "C" NTSTATUS(__fastcall ZwProtectVirtualMemory)(HANDLE ProcessHandle, PVOID * BaseAddress, PULONG ProtectSize, ULONG NewProtect, PULONG OldProtect);
-
+extern "C" NTSTATUS __fastcall ZwProtectVirtualMemory(HANDLE ProcessHandle, PVOID * BaseAddress, PULONG ProtectSize, ULONG NewProtect, PULONG OldProtect);
+extern "C" NTSTATUS __fastcall ZwQueryVirtualMemory(HANDLE ProcessHandle, PVOID BaseAddress, MEMORY_INFORMATION_CLASS MemoryInformationClass, PVOID MemoryInformation, SIZE_T MemoryInformationLength, PSIZE_T ReturnLength);
+extern "C" NTSTATUS __fastcall NtQueryInformationProcess(HANDLE ProcessHandle, PROCESSINFOCLASS ProcessInformationClass, PVOID ProcessInformation, ULONG ProcessInformationLength, PULONG ReturnLength);
 
 // Planning to implement them all in the future.
 typedef NTSTATUS(__fastcall* tNtOpenThreadToken)(IN HANDLE ThreadHandle, IN ACCESS_MASK DesiredAccess, IN BOOLEAN OpenAsSelf, OUT PHANDLE TokenHandle);
@@ -140,6 +168,8 @@ extern tRtlCompareUnicodeStrings RtlCompareUnicodeStrings;
 typedef PIMAGE_NT_HEADERS(__fastcall* tRtlImageNtHeader)(PIMAGE_DOS_HEADER DosHeader);
 extern tRtlImageNtHeader RtlImageNtHeader;
 
+typedef UINT_PTR(__fastcall* tRtlReleaseActivationContext)(ACTIVATION_CONTEXT* ActivationContext);
+extern tRtlReleaseActivationContext RtlReleaseActivationContext;
 
 // Signatured
 #define LDRP_LOG_INTERNAL_PATTERN "\x89\x54\x24\x10\x4C\x8B\xDC\x49\x89\x4B\x08"
@@ -247,11 +277,11 @@ typedef NTSTATUS(__fastcall* tLdrpAppCompatRedirect)(PLDRP_LOAD_CONTEXT LoadCont
 extern tLdrpAppCompatRedirect LdrpAppCompatRedirect;
 
 #define LDRP_HASH_UNICODE_STRING_PATTERN "\x48\x89\x5C\x24\x08\x57\x48\x83\xEC\x20\x45\x33\xDB"
-typedef DWORD(__fastcall* tLdrpHashUnicodeString)(PUNICODE_STRING BaseDllName);
+typedef ULONG(__fastcall* tLdrpHashUnicodeString)(PUNICODE_STRING BaseDllName);
 extern tLdrpHashUnicodeString LdrpHashUnicodeString;
 
 #define LDRP_FIND_EXISTING_MODULE_PATTERN "\x48\x8B\xC4\x48\x89\x58\x08\x48\x89\x68\x10\x48\x89\x70\x18\x48\x89\x78\x20\x41\x56\x48\x83\xEC\x30\x48\x8B\x7C\x24\x60\x48\x8B\xD9"
-typedef NTSTATUS(__fastcall* tLdrpFindExistingModule)(PUNICODE_STRING BaseDllName, PUNICODE_STRING FullDllName, UINT64 Flags, DWORD BaseDllNameHash, PLDR_DATA_TABLE_ENTRY* LoadedDll);
+typedef NTSTATUS(__fastcall* tLdrpFindExistingModule)(PUNICODE_STRING BaseDllName, PUNICODE_STRING FullDllName, UINT64 Flags, ULONG BaseDllNameHash, PLDR_DATA_TABLE_ENTRY* LoadedDll);
 extern tLdrpFindExistingModule LdrpFindExistingModule;
 
 #define LDRP_LOADCONTEXT_REPLACE_MODULE_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x6C\x24\x10\x48\x89\x74\x24\x18\x57\x48\x83\xEC\x20\x48\x8B\xD9\x48\x8B\xF2"
@@ -298,10 +328,6 @@ extern tLdrpAppendUnicodeStringToFilenameBuffer LdrpAppendUnicodeStringToFilenam
 typedef NTSTATUS(__fastcall* tLdrpGetNtPathFromDosPath)(PUNICODE_STRING DosPath, LDRP_FILENAME_BUFFER* NtPath);
 extern tLdrpGetNtPathFromDosPath LdrpGetNtPathFromDosPath;
 
-#define LDRP_FIND_LOADEDDLL_LOCKHELD_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x6C\x24\x10\x48\x89\x74\x24\x18\x57\x41\x54\x41\x55\x41\x56\x41\x57\x48\x83\xEC\x20\x44\x8B\x7C\x24\x70"
-typedef NTSTATUS(__fastcall* tLdrpFindLoadedDllByNameLockHeld)(PUNICODE_STRING BaseDllName, PUNICODE_STRING FullDllName, DWORD Flags, PLDR_DATA_TABLE_ENTRY* pLdrEntry, DWORD BaseNameHashValue);
-extern tLdrpFindLoadedDllByNameLockHeld LdrpFindLoadedDllByNameLockHeld;
-
 #define LDRP_FIND_LOADEDDLL_MAPLOCK_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x6C\x24\x10\x48\x89\x74\x24\x18\x57\x41\x56\x41\x57\x48\x83\xEC\x30\x4C\x8B\x15\xFD\x89\x15\x00"
 typedef NTSTATUS(__fastcall* tLdrpFindLoadedDllByMappingLockHeld)(PIMAGE_DOS_HEADER DllBase, PIMAGE_NT_HEADERS OutHeaders, PVOID Unknown, PLDR_DATA_TABLE_ENTRY* pLdrEntry);
 extern tLdrpFindLoadedDllByMappingLockHeld LdrpFindLoadedDllByMappingLockHeld;
@@ -333,3 +359,43 @@ extern tRtlQueryImageFileKeyOption RtlQueryImageFileKeyOption;
 #define RTLP_IMAGEDIR_ENTRYTODATA_PATTERN "\x4C\x8B\xDC\x49\x89\x5B\x10\x49\x89\x6B\x18\x49\x89\x73\x20\x57\x41\x56\x41\x57\x48\x83\xEC\x20\x4C\x8B\x74\x24\x60"
 typedef NTSTATUS(__fastcall* tRtlpImageDirectoryEntryToDataEx)(PIMAGE_DOS_HEADER DllBase, BOOLEAN Unknown, WORD Characteristics, ULONG64* LastRVASection, PVOID OutHeader);
 extern tRtlpImageDirectoryEntryToDataEx RtlpImageDirectoryEntryToDataEx;
+
+#define LDRP_LOG_DLLRELOCATION_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x6C\x24\x10\x48\x89\x74\x24\x18\x57\x41\x54\x41\x55\x41\x56\x41\x57\x48\x83\xEC\x20\x4D\x8B\xF1"
+typedef PVOID(__fastcall* tLdrpLogDllRelocationEtwEvent)(PUNICODE_STRING FullDllName, ULONGLONG ImageBase, PIMAGE_DOS_HEADER DllBase, SIZE_T Size);
+extern tLdrpLogDllRelocationEtwEvent LdrpLogDllRelocationEtwEvent;
+
+#define LDRP_NOTIFY_LOADOFGRAPH_PATTERN "\x48\x89\x5C\x24\x10\x48\x89\x74\x24\x18\x57\x48\x83\xEC\x20\x48\x8B\x71\x28\x48\x8B\xF9"
+typedef NTSTATUS(__fastcall* tLdrpNotifyLoadOfGraph)(LDR_DDAG_NODE* DdagNode);
+extern tLdrpNotifyLoadOfGraph LdrpNotifyLoadOfGraph;
+
+#define LDRP_DYNAMIC_SHIMMODULE_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x6C\x24\x18\x48\x89\x74\x24\x20\x57\x41\x56\x41\x57\x48\x83\xEC\x40"
+typedef NTSTATUS(__fastcall* tLdrpDynamicShimModule)(LDR_DDAG_NODE* DdagNode);
+extern tLdrpDynamicShimModule LdrpDynamicShimModule;
+
+#define LDRP_ACQUIRE_LOADERLOCK_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x74\x24\x10\x57\x48\x83\xEC\x30\xE8\xE4\x9E\xFE\xFF"
+typedef NTSTATUS(__fastcall* tLdrpAcquireLoaderLock)();
+extern tLdrpAcquireLoaderLock LdrpAcquireLoaderLock;
+
+#define LDRP_INIT_GRAPH_RECURSE_PATTERN "\x48\x89\x5C\x24\x10\x48\x89\x6C\x24\x18\x48\x89\x74\x24\x20\x57\x41\x56\x41\x57\x48\x83\xEC\x20\x83\x79\x38\xFC"
+typedef NTSTATUS(__fastcall* tLdrpInitializeGraphRecurse)(LDR_DDAG_NODE* DdagNode, NTSTATUS* pStatus, char* Unknown);
+extern tLdrpInitializeGraphRecurse LdrpInitializeGraphRecurse;
+
+#define LDRP_RELEASE_LOADER_LOCK_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x74\x24\x10\x57\x48\x83\xEC\x30\x48\x8D\x0D\x2E\xD8\x12\x00"
+typedef NTSTATUS(__fastcall* tLdrpReleaseLoaderLock)(ULONG64 Unused, ULONG Two, ULONG64 LdrFlags);
+extern tLdrpReleaseLoaderLock LdrpReleaseLoaderLock;
+
+#define LDRP_CHECKPAGES_FOR_TAMPERING_PATTERN "\x48\x8B\xC4\x48\x89\x58\x08\x48\x89\x68\x10\x48\x89\x70\x18\x48\x89\x78\x20\x41\x56\x48\x83\xEC\x30\x48\x8D\xBA\xFF\x0F\x00\x00"
+typedef BOOLEAN(__fastcall* tLdrpCheckPagesForTampering)(PIMAGE_DATA_DIRECTORY pDataDir, ULONG64 Offset);
+extern tLdrpCheckPagesForTampering LdrpCheckPagesForTampering;
+
+#define LDRP_LOAD_DEPENDENTMODULEA_PATTERN "\x4C\x8B\xDC\x55\x53\x49\x8D\xAB\x48\xFF\xFF\xFF"
+typedef NTSTATUS(__fastcall* tLdrpLoadDependentModuleA)(PUNICODE_STRING SourceString, UINT_PTR Unknown, PIMAGE_THUNK_DATA* ppThunk);
+extern tLdrpLoadDependentModuleA LdrpLoadDependentModuleA;
+
+#define LDRP_LOAD_DEPENDENTMODULEW_PATTERN "\x48\x89\x5C\x24\x20\x55\x56\x57\x41\x56\x41\x57\x48\x81\xEC\x50\x01\x00\x00"
+typedef NTSTATUS(__fastcall* tLdrpLoadDependentModuleW)(PUNICODE_STRING FullPath, PVOID* ppvIAT, PIMAGE_THUNK_DATA* ppThunk);
+extern tLdrpLoadDependentModuleW LdrpLoadDependentModuleW;
+
+#define LDRP_QUEUE_WORK_PATTERN "\x40\x53\x48\x83\xEC\x20\x48\x8B\x41\x28\x48\x8B\xD9"
+typedef NTSTATUS(__fastcall* tLdrpQueueWork)(PLDRP_LOAD_CONTEXT LoadContext, PIMAGE_DOS_HEADER DllBase, PIMAGE_THUNK_DATA32 pThunk);
+extern tLdrpQueueWork LdrpQueueWork;

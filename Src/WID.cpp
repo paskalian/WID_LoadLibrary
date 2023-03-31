@@ -51,6 +51,14 @@ NTSTATUS WID::Init()
 		(LdrpLockMemoryPrivilege				= (ULONG**)								((PCHAR)NtdllModule + 0x14DAC0)								,assert(LdrpLockMemoryPrivilege));
 		(LdrpMaximumUserModeAddress				= (ULONG64*)							((PCHAR)NtdllModule + 0x199280)								,assert(LdrpMaximumUserModeAddress));
 		(LdrpMapAndSnapWork						= (UINT_PTR*)							((PCHAR)NtdllModule + 0x184238)								,assert(LdrpMapAndSnapWork));
+		(LdrpHashTable							= (LIST_ENTRY*)							((PCHAR)NtdllModule + 0x183FE0)								,assert(LdrpHashTable));
+		(LdrpHeap								= (PVOID*)								((PCHAR)NtdllModule + 0x1843E0)								,assert(LdrpHeap));
+		(LdrpIsHotPatchingEnabled				= (BOOLEAN*)							((PCHAR)NtdllModule + 0x185258)								,assert(LdrpIsHotPatchingEnabled));
+		(LdrpRedirectionModule					= (LDR_DATA_TABLE_ENTRY**)				((PCHAR)NtdllModule + 0x184218)								,assert(LdrpRedirectionModule));
+		(LdrpManifestProberRoutine				= (tLdrpManifestProberRoutine)			((PCHAR)NtdllModule + 0x184C20)								,assert(LdrpManifestProberRoutine));
+		(LdrpRedirectionCalloutFunc				= (tLdrpRedirectionCalloutFunc)			((PCHAR)NtdllModule + 0x184228)								,assert(LdrpRedirectionCalloutFunc));
+		(qword_1993A8							= (ULONG64**)							((PCHAR)NtdllModule + 0x1993A8)								,assert(qword_1993A8));
+		(NtdllBaseTag							= (LONG*)								((PCHAR)NtdllModule + 0x1843F0)								,assert(NtdllBaseTag));
 
 		// Exported functions
 		(NtOpenThreadToken						= (tNtOpenThreadToken)					GetProcAddress(NtdllModule, "NtOpenThreadToken")			,assert(NtOpenThreadToken));
@@ -74,6 +82,7 @@ NTSTATUS WID::Init()
 		(RtlReleasePrivilege					= (tRtlReleasePrivilege)				GetProcAddress(NtdllModule, "RtlReleasePrivilege")			,assert(RtlReleasePrivilege));
 		(RtlCompareUnicodeStrings				= (tRtlCompareUnicodeStrings)			GetProcAddress(NtdllModule, "RtlCompareUnicodeStrings")		,assert(RtlCompareUnicodeStrings));
 		(RtlImageNtHeader						= (tRtlImageNtHeader)					GetProcAddress(NtdllModule, "RtlImageNtHeader")				,assert(RtlImageNtHeader));
+		(RtlReleaseActivationContext			= (tRtlReleaseActivationContext)		GetProcAddress(NtdllModule, "RtlReleaseActivationContext")	,assert(RtlReleaseActivationContext));
 
 		// Signatured.
 		// I don't think the signatures will ever change, you can go with the offsets though.
@@ -116,7 +125,6 @@ NTSTATUS WID::Init()
 		(LdrpAllocateUnicodeString					= (tLdrpAllocateUnicodeString)				Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_ALLOCATE_UNICODESTRING_PATTERN,		strlen(LDRP_ALLOCATE_UNICODESTRING_PATTERN))		,assert(LdrpAllocateUnicodeString));
 		(LdrpAppendUnicodeStringToFilenameBuffer	= (tLdrpAppendUnicodeStringToFilenameBuffer)Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_APPEND_UNICODETOFILENAME_PATTERN,		strlen(LDRP_APPEND_UNICODETOFILENAME_PATTERN))		,assert(LdrpAppendUnicodeStringToFilenameBuffer));
 		(LdrpGetNtPathFromDosPath					= (tLdrpGetNtPathFromDosPath)				Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_GET_NTPATH_FROM_DOSPATH_PATTERN,		strlen(LDRP_GET_NTPATH_FROM_DOSPATH_PATTERN))		,assert(LdrpGetNtPathFromDosPath));
-		(LdrpFindLoadedDllByNameLockHeld			= (tLdrpFindLoadedDllByNameLockHeld)		Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_FIND_LOADEDDLL_LOCKHELD_PATTERN,		strlen(LDRP_FIND_LOADEDDLL_LOCKHELD_PATTERN))		,assert(LdrpFindLoadedDllByNameLockHeld));
 		(LdrpFindLoadedDllByMappingLockHeld			= (tLdrpFindLoadedDllByMappingLockHeld)		Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_FIND_LOADEDDLL_MAPLOCK_PATTERN,		strlen(LDRP_FIND_LOADEDDLL_MAPLOCK_PATTERN))		,assert(LdrpFindLoadedDllByMappingLockHeld));
 		(LdrpInsertDataTableEntry					= (tLdrpInsertDataTableEntry)				Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_INSERT_DATATABLEENTRY_PATTERN,		strlen(LDRP_INSERT_DATATABLEENTRY_PATTERN))			,assert(LdrpInsertDataTableEntry));
 		(LdrpInsertModuleToIndexLockHeld			= (tLdrpInsertModuleToIndexLockHeld)		Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_INSERT_MODTOIDX_LOCKHELD_PATTERN,		strlen(LDRP_INSERT_MODTOIDX_LOCKHELD_PATTERN))		,assert(LdrpInsertModuleToIndexLockHeld));
@@ -125,6 +133,16 @@ NTSTATUS WID::Init()
 		(LdrpProcessMachineMismatch					= (tLdrpProcessMachineMismatch)				Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_PROCESS_MACHINE_MISMATCH_PATTERN,		strlen(LDRP_PROCESS_MACHINE_MISMATCH_PATTERN))		,assert(LdrpProcessMachineMismatch));
 		(RtlQueryImageFileKeyOption					= (tRtlQueryImageFileKeyOption)				Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, RTL_QUERY_IMAGEFILE_KEYOPT_PATTERN,		strlen(RTL_QUERY_IMAGEFILE_KEYOPT_PATTERN))			,assert(RtlQueryImageFileKeyOption));
 		(RtlpImageDirectoryEntryToDataEx			= (tRtlpImageDirectoryEntryToDataEx)		Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, RTLP_IMAGEDIR_ENTRYTODATA_PATTERN,			strlen(RTLP_IMAGEDIR_ENTRYTODATA_PATTERN))			,assert(RtlpImageDirectoryEntryToDataEx));
+		(LdrpLogDllRelocationEtwEvent				= (tLdrpLogDllRelocationEtwEvent)			Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_LOG_DLLRELOCATION_PATTERN,			strlen(LDRP_LOG_DLLRELOCATION_PATTERN))				,assert(LdrpLogDllRelocationEtwEvent));
+		(LdrpNotifyLoadOfGraph						= (tLdrpNotifyLoadOfGraph)					Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_NOTIFY_LOADOFGRAPH_PATTERN,			strlen(LDRP_NOTIFY_LOADOFGRAPH_PATTERN))			,assert(LdrpNotifyLoadOfGraph));
+		(LdrpDynamicShimModule						= (tLdrpDynamicShimModule)					Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_DYNAMIC_SHIMMODULE_PATTERN,			strlen(LDRP_DYNAMIC_SHIMMODULE_PATTERN))			,assert(LdrpDynamicShimModule));
+		(LdrpAcquireLoaderLock						= (tLdrpAcquireLoaderLock)					Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_ACQUIRE_LOADERLOCK_PATTERN,			strlen(LDRP_ACQUIRE_LOADERLOCK_PATTERN))			,assert(LdrpAcquireLoaderLock));
+		(LdrpInitializeGraphRecurse					= (tLdrpInitializeGraphRecurse)				Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_INIT_GRAPH_RECURSE_PATTERN,			strlen(LDRP_INIT_GRAPH_RECURSE_PATTERN))			,assert(LdrpInitializeGraphRecurse));
+		(LdrpReleaseLoaderLock						= (tLdrpReleaseLoaderLock)					Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_RELEASE_LOADER_LOCK_PATTERN,			strlen(LDRP_RELEASE_LOADER_LOCK_PATTERN))			,assert(LdrpReleaseLoaderLock));
+		(LdrpCheckPagesForTampering					= (tLdrpCheckPagesForTampering)				Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_CHECKPAGES_FOR_TAMPERING_PATTERN,		strlen(LDRP_CHECKPAGES_FOR_TAMPERING_PATTERN))		,assert(LdrpCheckPagesForTampering));
+		(LdrpLoadDependentModuleA					= (tLdrpLoadDependentModuleA)				Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_LOAD_DEPENDENTMODULEA_PATTERN,		strlen(LDRP_LOAD_DEPENDENTMODULEA_PATTERN))			,assert(LdrpLoadDependentModuleA));
+		(LdrpLoadDependentModuleW					= (tLdrpLoadDependentModuleW)				Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_LOAD_DEPENDENTMODULEW_PATTERN,		strlen(LDRP_LOAD_DEPENDENTMODULEW_PATTERN))			,assert(LdrpLoadDependentModuleW));
+		(LdrpQueueWork								= (tLdrpQueueWork)							Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_QUEUE_WORK_PATTERN,					strlen(LDRP_QUEUE_WORK_PATTERN))					,assert(LdrpQueueWork));
 
 		WID_DBG( printf("[WID] >> Initialized.\n"); )
 

@@ -112,11 +112,16 @@ namespace WID
 			NTSTATUS __fastcall fLdrpMapViewOfSection(HANDLE SectionHandle, ULONG ProtectFlags, PIMAGE_DOS_HEADER* BaseAddress, DWORD Unknown, PULONG ViewSize, ULONG AllocationType, ULONG Win32Protect, PUNICODE_STRING FullDllName);
 			NTSTATUS __fastcall fLdrpCompleteMapModule(PLDRP_LOAD_CONTEXT LoadContext, PIMAGE_NT_HEADERS OutHeaders, NTSTATUS Status);
 			NTSTATUS __fastcall fLdrpRelocateImage(PIMAGE_DOS_HEADER DllBase, SIZE_T Size, PIMAGE_NT_HEADERS OutHeaders, PUNICODE_STRING FullDllName);
+			//NTSTATUS __fastcall fLdrpProtectAndRelocateImage(PIMAGE_DOS_HEADER DllBase);
+			NTSTATUS __fastcall fLdrpProtectAndRelocateImage(PIMAGE_DOS_HEADER DllBase, SIZE_T Size, PIMAGE_NT_HEADERS OutHeader);
+			NTSTATUS __fastcall	fLdrpSetProtection(PIMAGE_DOS_HEADER DllBase, BOOLEAN Unknown);
+			NTSTATUS __fastcall fLdrRelocateImageWithBias(PIMAGE_DOS_HEADER DllBase, SIZE_T Size, PIMAGE_NT_HEADERS OutHeader);
+			PIMAGE_NT_HEADERS __fastcall fLdrProcessRelocationBlockLongLong(USHORT Machine, ULONG64 Signature, ULONG64 Unknown, PIMAGE_NT_HEADERS64 NtHeader, ULONG64 Unknown3);
 
 			NTSTATUS __fastcall fLdrpProcessMappedModule(PLDR_DATA_TABLE_ENTRY LdrEntry, ULONG64 Flags, ULONG Unknown);
 			NTSTATUS __fastcall fLdrpCorProcessImports(PLDR_DATA_TABLE_ENTRY LdrEntry);
-			NTSTATUS __fastcall fLdrpMapAndSnapDependency(PLDRP_LOAD_CONTEXT LoadContext);
-
+			NTSTATUS* __fastcall fLdrpMapAndSnapDependency(PLDRP_LOAD_CONTEXT LoadContext);
+			NTSTATUS __fastcall fLdrpPrepareImportAddressTableForSnap(LDRP_LOAD_CONTEXT* LoadContext);
 
 
 			NTSTATUS __fastcall fLdrpPrepareModuleForExecution(PLDR_DATA_TABLE_ENTRY LdrEntry, NTSTATUS* pStatus);
