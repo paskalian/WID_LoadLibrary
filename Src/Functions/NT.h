@@ -13,11 +13,12 @@
 #define STATUS_DEVICE_OFF_LINE				0x80000010
 #define STATUS_UNSUCCESSFUL					0xC0000001
 #define STATUS_NOT_IMPLEMENTED				0xC0000002
+#define STATUS_NO_SUCH_FILE					0xC000000F
 #define STATUS_CONFLICTING_ADDRESSES		0xC0000018
 #define STATUS_ACCESS_DENIED				0xC0000022
 #define STATUS_OBJECT_NAME_NOT_FOUND		0xC0000034
 #define STATUS_OBJECT_PATH_NOT_FOUND		0xC000003A
-#define STATUS_NO_SUCH_FILE					0xC000000F
+#define STATUS_PROCEDURE_NOT_FOUND			0xC000007A
 #define STATUS_DEVICE_NOT_READY				0xC00000A3
 #define STATUS_INVALID_IMAGE_FORMAT			0xC000007B
 #define STATUS_NO_TOKEN						0xC000007C
@@ -67,6 +68,17 @@ extern BOOLEAN*					LdrpIsHotPatchingEnabled;
 extern LDR_DATA_TABLE_ENTRY**	LdrpRedirectionModule;
 extern ULONG64**				qword_1993A8;
 extern LONG*					NtdllBaseTag;
+extern UINT_PTR**				xmmword_199520;
+extern UINT_PTR*				qword_199530;
+extern LDR_DATA_TABLE_ENTRY**	LdrpNtDllDataTableEntry;
+extern UINT_PTR*				qword_1993B8;
+extern DWORD*					dword_19939C;
+extern DWORD*					LoadFailureOperational;
+extern DWORD*					dword_199398;
+extern UINT_PTR***				qword_1843B8;
+extern UINT_PTR*				qword_1843B0;
+extern UINT_PTR*				LdrpCurrentDllInitializer;
+extern LPVOID**					LdrpProcessInitContextRecord;
 
 typedef NTSTATUS(__fastcall** tLdrpManifestProberRoutine)(PIMAGE_DOS_HEADER Base, PWCHAR, PVOID);
 extern tLdrpManifestProberRoutine LdrpManifestProberRoutine;
@@ -86,14 +98,22 @@ NTSTATUS __fastcall LdrpCorValidateImage(PIMAGE_DOS_HEADER DosHeader);
 NTSTATUS __fastcall LdrpCorFixupImage(PIMAGE_DOS_HEADER DosHeader);
 NTSTATUS __fastcall LdrpFindLoadedDllByNameLockHeld(PUNICODE_STRING BaseDllName, PUNICODE_STRING FullDllName, ULONG64 Flags, LDR_DATA_TABLE_ENTRY** pLdrEntry, ULONG BaseNameHashValue);
 BOOLEAN __fastcall LdrpIsILOnlyImage(PIMAGE_DOS_HEADER DllBase);
-VOID __fastcall LdrpAddNodeServiceTag(_LDR_DDAG_NODE* DdagNode, ULONG ServiceTag);
+VOID __fastcall LdrpAddNodeServiceTag(LDR_DDAG_NODE* DdagNode, UINT_PTR ServiceTag);
 NTSTATUS __fastcall LdrpFindDllActivationContext(LDR_DATA_TABLE_ENTRY* LdrEntry);
 PIMAGE_LOAD_CONFIG_DIRECTORY LdrImageDirectoryEntryToLoadConfig(PIMAGE_DOS_HEADER DllBase);
 BOOLEAN __fastcall LdrpShouldModuleImportBeRedirected(LDR_DATA_TABLE_ENTRY* DllEntry);
 PIMAGE_IMPORT_DESCRIPTOR __fastcall LdrpGetImportDescriptorForSnap(LDRP_LOAD_CONTEXT* LoadContext);
 NTSTATUS __fastcall LdrpMapCleanModuleView(LDRP_LOAD_CONTEXT* LoadContext);
-
-//NTSTATUS __fastcall LdrpThreadTokenSetMainThreadToken();
+LDR_DATA_TABLE_ENTRY* __fastcall LdrpHandleReplacedModule(LDR_DATA_TABLE_ENTRY* LdrEntry);
+NTSTATUS __fastcall LdrpFreeReplacedModule(LDR_DATA_TABLE_ENTRY* LdrDataTableEntry);
+VOID __fastcall LdrpHandlePendingModuleReplaced(LDRP_LOAD_CONTEXT* LoadContext);
+PIMAGE_SECTION_HEADER __fastcall RtlSectionTableFromVirtualAddress(PIMAGE_NT_HEADERS NtHeader, PVOID Base, UINT_PTR Address);
+PIMAGE_SECTION_HEADER __fastcall RtlAddressInSectionTable(PIMAGE_NT_HEADERS NtHeader, PVOID Base, UINT_PTR Address);
+BOOLEAN __fastcall LdrpValidateEntrySection(LDR_DATA_TABLE_ENTRY* DllEntry);
+BOOL __fastcall LdrpIsExecutableRelocatedImage(PIMAGE_DOS_HEADER DllBase);
+NTSTATUS __fastcall LdrpInitializeGraphRecurse(LDR_DDAG_NODE* DdagNode, NTSTATUS* pStatus, char* Unknown);
+NTSTATUS __fastcall LdrpInitializeNode(_LDR_DDAG_NODE* DdagNode);
+BOOLEAN __fastcall LdrpCallInitRoutine(BOOL(__fastcall* DllMain)(HINSTANCE hInstDll, DWORD fdwReason, LPVOID lpvReserved), PIMAGE_DOS_HEADER DllBase, unsigned int One, LPVOID ContextRecord);
 
 extern "C" NTSTATUS __fastcall ZwSystemDebugControl();
 extern "C" NTSTATUS __fastcall NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, OBJECT_ATTRIBUTES * ObjectAttributes, PLARGE_INTEGER MaximumSize, ULONG SectionPageProtection, ULONG AllocationAttributes, HANDLE FileHandle);
@@ -170,6 +190,15 @@ extern tRtlImageNtHeader RtlImageNtHeader;
 
 typedef UINT_PTR(__fastcall* tRtlReleaseActivationContext)(ACTIVATION_CONTEXT* ActivationContext);
 extern tRtlReleaseActivationContext RtlReleaseActivationContext;
+
+typedef NTSTATUS(__fastcall* tRtlCharToInteger)(const PCHAR String, ULONG Base, PULONG Value);
+extern tRtlCharToInteger RtlCharToInteger;
+
+typedef NTSTATUS(__fastcall* tRtlActivateActivationContextUnsafeFast)(RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_EXTENDED* StackFrameExtended, ACTIVATION_CONTEXT* ActivationContext);
+extern tRtlActivateActivationContextUnsafeFast RtlActivateActivationContextUnsafeFast;
+
+typedef VOID(__fastcall* tRtlDeactivateActivationContextUnsafeFast)(RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_EXTENDED* StackFrameExtended);
+extern tRtlDeactivateActivationContextUnsafeFast RtlDeactivateActivationContextUnsafeFast;
 
 // Signatured
 #define LDRP_LOG_INTERNAL_PATTERN "\x89\x54\x24\x10\x4C\x8B\xDC\x49\x89\x4B\x08"
@@ -265,7 +294,7 @@ typedef VOID(__fastcall* tLdrpLogLoadFailureEtwEvent)(PVOID Unknown, PVOID Unkno
 extern tLdrpLogLoadFailureEtwEvent LdrpLogLoadFailureEtwEvent;
 
 #define LDRP_REPORT_ERROR_PATTERN "\x48\x89\x5C\x24\x20\x55\x56\x57\x41\x54\x41\x55\x41\x56\x41\x57\x48\x8D\xAC\x24\x50\xFF\xFF\xFF\x48\x81\xEC\xB0\x01\x00\x00\x48\x8B\x05\xEE\x08\x19\x00"
-typedef NTSTATUS(__fastcall* tLdrpReportError)(PLDRP_LOAD_CONTEXT LoadContext, ULONG Unknown, NTSTATUS Status);
+typedef NTSTATUS(__fastcall* tLdrpReportError)(PVOID Report, ULONG Unknown, NTSTATUS Status);
 extern tLdrpReportError LdrpReportError;
 
 #define LDRP_RESOLVE_DLLNAME_PATTERN "\x4C\x8B\xDC\x49\x89\x5B\x08\x49\x89\x6B\x10\x49\x89\x73\x20\x4D\x89\x43\x18\x57\x41\x54\x41\x55\x41\x56"
@@ -376,10 +405,6 @@ extern tLdrpDynamicShimModule LdrpDynamicShimModule;
 typedef NTSTATUS(__fastcall* tLdrpAcquireLoaderLock)();
 extern tLdrpAcquireLoaderLock LdrpAcquireLoaderLock;
 
-#define LDRP_INIT_GRAPH_RECURSE_PATTERN "\x48\x89\x5C\x24\x10\x48\x89\x6C\x24\x18\x48\x89\x74\x24\x20\x57\x41\x56\x41\x57\x48\x83\xEC\x20\x83\x79\x38\xFC"
-typedef NTSTATUS(__fastcall* tLdrpInitializeGraphRecurse)(LDR_DDAG_NODE* DdagNode, NTSTATUS* pStatus, char* Unknown);
-extern tLdrpInitializeGraphRecurse LdrpInitializeGraphRecurse;
-
 #define LDRP_RELEASE_LOADER_LOCK_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x74\x24\x10\x57\x48\x83\xEC\x30\x48\x8D\x0D\x2E\xD8\x12\x00"
 typedef NTSTATUS(__fastcall* tLdrpReleaseLoaderLock)(ULONG64 Unused, ULONG Two, ULONG64 LdrFlags);
 extern tLdrpReleaseLoaderLock LdrpReleaseLoaderLock;
@@ -389,13 +414,73 @@ typedef BOOLEAN(__fastcall* tLdrpCheckPagesForTampering)(PIMAGE_DATA_DIRECTORY p
 extern tLdrpCheckPagesForTampering LdrpCheckPagesForTampering;
 
 #define LDRP_LOAD_DEPENDENTMODULEA_PATTERN "\x4C\x8B\xDC\x55\x53\x49\x8D\xAB\x48\xFF\xFF\xFF"
-typedef NTSTATUS(__fastcall* tLdrpLoadDependentModuleA)(PUNICODE_STRING SourceString, UINT_PTR Unknown, PIMAGE_THUNK_DATA* ppThunk);
+typedef NTSTATUS(__fastcall* tLdrpLoadDependentModuleA)(PUNICODE_STRING SourceString, LDRP_LOAD_CONTEXT* LoadContext, LDR_DATA_TABLE_ENTRY* LdrEntry, UINT_PTR Unknown, LDR_DATA_TABLE_ENTRY** pLdrEntry, UINT_PTR Unknown2);
 extern tLdrpLoadDependentModuleA LdrpLoadDependentModuleA;
 
 #define LDRP_LOAD_DEPENDENTMODULEW_PATTERN "\x48\x89\x5C\x24\x20\x55\x56\x57\x41\x56\x41\x57\x48\x81\xEC\x50\x01\x00\x00"
-typedef NTSTATUS(__fastcall* tLdrpLoadDependentModuleW)(PUNICODE_STRING FullPath, PVOID* ppvIAT, PIMAGE_THUNK_DATA* ppThunk);
+typedef NTSTATUS(__fastcall* tLdrpLoadDependentModuleW)(PUNICODE_STRING SourceString, LDRP_LOAD_CONTEXT* LoadContext, LDR_DATA_TABLE_ENTRY* DllEntry);
 extern tLdrpLoadDependentModuleW LdrpLoadDependentModuleW;
 
 #define LDRP_QUEUE_WORK_PATTERN "\x40\x53\x48\x83\xEC\x20\x48\x8B\x41\x28\x48\x8B\xD9"
-typedef NTSTATUS(__fastcall* tLdrpQueueWork)(PLDRP_LOAD_CONTEXT LoadContext, PIMAGE_DOS_HEADER DllBase, PIMAGE_THUNK_DATA32 pThunk);
+typedef NTSTATUS(__fastcall* tLdrpQueueWork)(PLDRP_LOAD_CONTEXT LoadContext);
 extern tLdrpQueueWork LdrpQueueWork;
+
+#define LDRP_HANDLE_TLSDATA_PATTERN "\x48\x89\x5C\x24\x10\x48\x89\x74\x24\x18\x48\x89\x7C\x24\x20\x41\x55\x41\x56\x41\x57\x48\x81\xEC\x00\x01\x00\x00"
+typedef NTSTATUS(__fastcall* tLdrpHandleTlsData)(LDR_DATA_TABLE_ENTRY* LdrDataTableEntry);
+extern tLdrpHandleTlsData LdrpHandleTlsData;
+
+#define LDR_CONTROLFLOWGUARD_ENFEXP_PATTERN "\x33\xC0\x48\x39\x05\x8F\x7D\x17\x00"
+typedef BOOLEAN(__fastcall* tLdrControlFlowGuardEnforcedWithExportSuppression)();
+extern tLdrControlFlowGuardEnforcedWithExportSuppression LdrControlFlowGuardEnforcedWithExportSuppression;
+
+#define LDRP_UNSUPPRESS_ADDRESSIAT_PATTERN "\x48\x89\x5C\x24\x18\x55\x56\x57\x41\x54\x41\x55\x41\x56\x41\x57\x48\x8B\xEC\x48\x83\xEC\x70\x48\x8B\x05\x6E\xC6\x0B\x00"
+typedef __int64(__fastcall* tLdrpUnsuppressAddressTakenIat)(PIMAGE_DOS_HEADER DllBase, ULONG Unknown, ULONG Unknown2);
+extern tLdrpUnsuppressAddressTakenIat LdrpUnsuppressAddressTakenIat;
+
+#define LDR_CONTROLFLOWGUARD_ENF_PATTERN "\x48\x83\x3D\x90\xD5\x16\x00\x00"
+typedef BOOL(__fastcall* tLdrControlFlowGuardEnforced)();
+extern tLdrControlFlowGuardEnforced LdrControlFlowGuardEnforced;
+
+#define RTLP_LOOKUP_FUNCTIONTABLE_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x74\x24\x18\x48\x89\x7C\x24\x20\x41\x56\x48\x83\xEC\x20\x33\xDB"
+typedef PIMAGE_RUNTIME_FUNCTION_ENTRY(__fastcall* tRtlpxLookupFunctionTable)(PIMAGE_DOS_HEADER DllBase, PIMAGE_RUNTIME_FUNCTION_ENTRY* ppImageFunctionEntry);
+extern tRtlpxLookupFunctionTable RtlpxLookupFunctionTable;
+
+#define LDRP_CHECK_REDIRECTION_PATTERN "\x48\x8B\xC4\x48\x89\x58\x08\x48\x89\x70\x10\x48\x89\x78\x18\x4C\x89\x68\x20\x55\x41\x56\x41\x57\x48\x8D\x68\xA1"
+typedef PCHAR(__fastcall* tLdrpCheckRedirection)(LDR_DATA_TABLE_ENTRY* DllEntry, LDR_DATA_TABLE_ENTRY* NtLdrEntry, PCHAR StringToBeHashed);
+extern tLdrpCheckRedirection LdrpCheckRedirection;
+
+#define COMPAT_CACHE_LOOKUPCDB_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x74\x24\x10\x57\x48\x81\xEC\xB0\x01\x00\x00"
+typedef BOOL(__fastcall* tCompatCachepLookupCdb)(PWCHAR Buffer, LONG Unknown);
+extern tCompatCachepLookupCdb CompatCachepLookupCdb;
+
+#define LDRP_GEN_RANDOM_PATTERN "\x48\x83\xEC\x28\xB9\x1C\x00\x00\x00\xE8\x0E\x0B\x00\x00"
+typedef UINT_PTR(__fastcall* tLdrpGenRandom)();
+extern tLdrpGenRandom LdrpGenRandom;
+
+#define LDR_INIT_SECURITY_COOKIE_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x74\x24\x10\x48\x89\x7C\x24\x20\x55\x41\x54\x41\x56"
+typedef BOOL(__fastcall* tLdrInitSecurityCookie)(PIMAGE_DOS_HEADER DllBase, INT_PTR ImageSize, UINT_PTR* Zero, UINT_PTR RandomNumberStuff, UINT_PTR* Zero_2);
+extern tLdrInitSecurityCookie LdrInitSecurityCookie;
+
+#define LDRP_CFG_PROCESS_LOADCFG_PATTERN "\x48\x89\x5C\x24\x20\x55\x56\x57\x41\x54\x41\x55\x41\x56\x41\x57\x48\x8D\x6C\x24\xD9\x48\x81\xEC\xF0\x00\x00\x00\x48\x8B\x05\x99\x11\x17\x00"
+typedef NTSTATUS(__fastcall* tLdrpCfgProcessLoadConfig)(LDR_DATA_TABLE_ENTRY* DllEntry, PIMAGE_NT_HEADERS NtHeader, __int64 Zero);
+extern tLdrpCfgProcessLoadConfig LdrpCfgProcessLoadConfig;
+
+#define RTL_INSERT_INV_FUNCTIONTABLE_PATTERN "\x48\x89\x5C\x24\x08\x57\x48\x83\xEC\x30\x8B\xDA\x4C\x8D\x44\x24\x50"
+typedef NTSTATUS(__fastcall* tRtlInsertInvertedFunctionTable)(PIMAGE_DOS_HEADER DllBase, ULONG ImageSize);
+extern tRtlInsertInvertedFunctionTable RtlInsertInvertedFunctionTable;
+
+#define LDRP_SIGNAL_MODULEMAPPED_PATTERN "\x48\x89\x5C\x24\x08\x57\x48\x83\xEC\x20\x48\x8B\x81\x98\x00\x00\x00\x48\x8B\x78\x30"
+typedef LDR_DDAG_NODE*(__fastcall* tLdrpSignalModuleMapped)(LDR_DATA_TABLE_ENTRY* DllEntry);
+extern tLdrpSignalModuleMapped LdrpSignalModuleMapped;
+
+#define AVRF_DLL_LOADNOTIFICATION_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x6C\x24\x10\x48\x89\x74\x24\x18\x57\x48\x83\xEC\x30\x65\x48\x8B\x04\x25\x60\x00\x00\x00"
+typedef NTSTATUS(__fastcall* tAVrfDllLoadNotification)(LDR_DATA_TABLE_ENTRY* DllEntry);
+extern tAVrfDllLoadNotification AVrfDllLoadNotification;
+
+#define LDRP_SEND_DLLNOTIFICATIONS_PATTERN "\x4C\x8B\xDC\x49\x89\x5B\x08\x49\x89\x73\x10\x57\x48\x83\xEC\x50\x83\x64\x24\x20\x00"
+typedef NTSTATUS(__fastcall* tLdrpSendDllNotifications)(LDR_DATA_TABLE_ENTRY* DllEntry, UINT_PTR Unknown);
+extern tLdrpSendDllNotifications LdrpSendDllNotifications;
+
+#define LDRP_CALL_TLSINIT_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x74\x24\x10\x48\x89\x7C\x24\x20\x41\x56\x48\x83\xEC\x60"
+typedef NTSTATUS(__fastcall* tLdrpCallTlsInitializers)(ULONG One, LDR_DATA_TABLE_ENTRY* LdrEntry);
+extern tLdrpCallTlsInitializers LdrpCallTlsInitializers;

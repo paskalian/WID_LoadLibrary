@@ -31,6 +31,17 @@ BOOLEAN*                LdrpIsHotPatchingEnabled        = nullptr;
 LDR_DATA_TABLE_ENTRY**  LdrpRedirectionModule           = nullptr;
 ULONG64**               qword_1993A8                    = nullptr;
 LONG*                   NtdllBaseTag                    = nullptr;
+UINT_PTR**              xmmword_199520                  = nullptr;
+UINT_PTR*               qword_199530                    = nullptr;
+LDR_DATA_TABLE_ENTRY**  LdrpNtDllDataTableEntry         = nullptr;
+UINT_PTR*               qword_1993B8                    = nullptr;
+DWORD*                  dword_19939C                    = nullptr;
+DWORD*                  LoadFailureOperational          = nullptr;
+DWORD*                  dword_199398                    = nullptr;
+UINT_PTR***             qword_1843B8                    = nullptr;
+UINT_PTR*               qword_1843B0                    = nullptr;
+UINT_PTR*               LdrpCurrentDllInitializer       = nullptr;
+LPVOID**                LdrpProcessInitContextRecord    = nullptr;
 
 tLdrpManifestProberRoutine LdrpManifestProberRoutine    = nullptr;
 tLdrpRedirectionCalloutFunc LdrpRedirectionCalloutFunc  = nullptr;
@@ -284,17 +295,18 @@ BOOLEAN __fastcall LdrpIsILOnlyImage(PIMAGE_DOS_HEADER DllBase)
     return CorHeader && LastRVASection >= 0x48 && (CorHeader->Flags & 1) != 0;
 }
 
-VOID __fastcall LdrpAddNodeServiceTag(LDR_DDAG_NODE* DdagNode, ULONG ServiceTag)
+VOID __fastcall LdrpAddNodeServiceTag(LDR_DDAG_NODE* DdagNode, UINT_PTR ServiceTag)
 {
-    LDR_DATA_TABLE_ENTRY* LdrEntry = CONTAINING_RECORD(DdagNode->Modules.Flink, LDR_DATA_TABLE_ENTRY, DdagNode);
-    //if (DdagNode->LoadCount != -1 && ((__int64)DdagNode->Modules.Flink[-4].Blink & 0x20) == 0)
-    if (DdagNode->LoadCount != -1 && (LdrEntry->FlagGroup[0] & 0x20) == 0)
+    //LDR_DATA_TABLE_ENTRY* LdrEntry = CONTAINING_RECORD(DdagNode->Modules.Flink, LDR_DATA_TABLE_ENTRY, DdagNode);
+    if (DdagNode->LoadCount != -1 && ((__int64)DdagNode->Modules.Flink[-4].Blink & 0x20) == 0)
+    //if (DdagNode->LoadCount != -1 && (LdrEntry->FlagGroup[0] & 0x20) == 0)
     {
         for (LDR_SERVICE_TAG_RECORD* i = DdagNode->ServiceTagList; i; i = i->Next)
         {
             if (i->ServiceTag == ServiceTag)
                 return;
         }
+
         LDR_SERVICE_TAG_RECORD* Heap = (LDR_SERVICE_TAG_RECORD*)RtlAllocateHeap(*LdrpHeap, 0, 0x10);
         if (Heap)
         {
@@ -309,9 +321,9 @@ VOID __fastcall LdrpAddNodeServiceTag(LDR_DDAG_NODE* DdagNode, ULONG ServiceTag)
                 do
                 {
                     Tail_2 = Tail_2->Next;
-                    LDR_DDAG_NODE* NextNode = CONTAINING_RECORD(Tail_2, LDR_DDAG_NODE, CondenseLink);
-                    //LdrpAddNodeServiceTag((_LDR_DDAG_NODE*)Tail_2[1].Next, ServiceTag);
-                    LdrpAddNodeServiceTag(NextNode, ServiceTag);
+                    // LDR_DDAG_NODE* NextNode = CONTAINING_RECORD(Tail_2, LDR_DDAG_NODE, CondenseLink);
+                    LdrpAddNodeServiceTag((LDR_DDAG_NODE*)Tail_2[1].Next, ServiceTag);
+                    //LdrpAddNodeServiceTag(NextNode, ServiceTag);
                 } while (Tail_2 != Tail);
             }
         }
@@ -334,7 +346,7 @@ NTSTATUS __fastcall LdrpFindDllActivationContext(LDR_DATA_TABLE_ENTRY* LdrEntry)
             }
 
             // LdrpManifestProberRoutine is a function pointer.
-            ACTIVATION_CONTEXT* pActivationCtx;
+            ACTIVATION_CONTEXT* pActivationCtx = nullptr;
             Status = (*LdrpManifestProberRoutine)(LdrEntry->DllBase, Buffer, &pActivationCtx);
             if ((unsigned int)(Status + 0x3FFFFF77) <= 2 || Status == STATUS_NOT_SUPPORTED || Status == STATUS_NO_SUCH_FILE || Status == STATUS_NOT_IMPLEMENTED || Status == STATUS_RESOURCE_LANG_NOT_FOUND)
             {
@@ -401,6 +413,7 @@ PIMAGE_IMPORT_DESCRIPTOR __fastcall LdrpGetImportDescriptorForSnap(LDRP_LOAD_CON
 {
     NTSTATUS Status;
 
+    // [CORRECT]
     //LDR_DATA_TABLE_ENTRY* DllEntry = (LDR_DATA_TABLE_ENTRY*)LoadContext->WorkQueueListEntry.Flink;
     LDR_DATA_TABLE_ENTRY* DllEntry = CONTAINING_RECORD(LoadContext->WorkQueueListEntry.Flink, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 
@@ -444,6 +457,338 @@ NTSTATUS __fastcall LdrpMapCleanModuleView(LDRP_LOAD_CONTEXT* LoadContext)
     return Status;
 }
 
+LDR_DATA_TABLE_ENTRY* __fastcall LdrpHandleReplacedModule(LDR_DATA_TABLE_ENTRY* LdrEntry)
+{
+    LDR_DATA_TABLE_ENTRY* DllEntry = LdrEntry;
+    if (LdrEntry)
+    {
+        LDRP_LOAD_CONTEXT* LoadContext = (LDRP_LOAD_CONTEXT*)LdrEntry->LoadContext;
+        if (LoadContext)
+        {
+            if ((LoadContext->Flags & 0x80000) == 0 && (LDR_DATA_TABLE_ENTRY*)LoadContext->WorkQueueListEntry.Flink != LdrEntry)
+            {
+                DllEntry = (LDR_DATA_TABLE_ENTRY*)LoadContext->WorkQueueListEntry.Flink;
+                LoadContext->WorkQueueListEntry.Flink = &LdrEntry->InLoadOrderLinks;
+            }
+        }
+    }
+    return DllEntry;
+}
+
+NTSTATUS __fastcall LdrpFreeReplacedModule(LDR_DATA_TABLE_ENTRY* LdrDataTableEntry)
+{
+    LdrpFreeLoadContext(LdrDataTableEntry->LoadContext);
+    // Revokes ProcessStaticImport (0x20) flag.
+    LdrDataTableEntry->Flags &= ~ProcessStaticImport;
+    LdrDataTableEntry->ReferenceCount = 1;
+    return LdrpDereferenceModule(LdrDataTableEntry);
+}
+
+VOID __fastcall LdrpHandlePendingModuleReplaced(LDRP_LOAD_CONTEXT* LoadContext)
+{
+    LDR_DATA_TABLE_ENTRY* Entry = (LDR_DATA_TABLE_ENTRY*)LoadContext->pvImports;
+    if (Entry)
+    {
+        LDR_DATA_TABLE_ENTRY* ReturnEntry = LdrpHandleReplacedModule(Entry);
+        LDR_DATA_TABLE_ENTRY** CompareEntry = LoadContext->pvImports;
+        if (ReturnEntry != (LDR_DATA_TABLE_ENTRY*)CompareEntry)
+            LdrpFreeReplacedModule((LDR_DATA_TABLE_ENTRY*)CompareEntry);
+        LoadContext->pvImports = nullptr;
+    }
+}
+
+PIMAGE_SECTION_HEADER __fastcall RtlSectionTableFromVirtualAddress(PIMAGE_NT_HEADERS NtHeader, PVOID Base, UINT_PTR Address)
+{
+    PIMAGE_SECTION_HEADER SectionHeader = (PIMAGE_SECTION_HEADER)((char*)&NtHeader->OptionalHeader + NtHeader->FileHeader.SizeOfOptionalHeader);
+    if (!NtHeader->FileHeader.NumberOfSections)
+        return nullptr;
+
+    ULONG NumberOfSections = NtHeader->FileHeader.NumberOfSections;
+    ULONG SectionIdx = 0;
+    while (TRUE)
+    {
+        ULONG VirtualAddress = SectionHeader->VirtualAddress;
+        if ((unsigned int)Address >= VirtualAddress && (unsigned int)Address < SectionHeader->SizeOfRawData + VirtualAddress)
+            break;
+
+        ++SectionHeader;
+        if (++SectionIdx >= NumberOfSections)
+            return nullptr;
+    }
+    return SectionHeader;
+}
+
+PIMAGE_SECTION_HEADER __fastcall RtlAddressInSectionTable(PIMAGE_NT_HEADERS NtHeader, PVOID Base, UINT_PTR Address)
+{
+    PIMAGE_SECTION_HEADER SectionHeader;
+
+    SectionHeader = RtlSectionTableFromVirtualAddress(NtHeader, Base, Address);
+    if (SectionHeader)
+        return (PIMAGE_SECTION_HEADER)(SectionHeader->PointerToRawData - SectionHeader->VirtualAddress);
+    return SectionHeader;
+}
+
+BOOLEAN __fastcall LdrpValidateEntrySection(LDR_DATA_TABLE_ENTRY* DllEntry)
+{
+    PIMAGE_NT_HEADERS OutHeaders;
+    RtlImageNtHeaderEx(3u, DllEntry->DllBase, 0, &OutHeaders);
+    ULONG AddressOfEntryPoint = OutHeaders->OptionalHeader.AddressOfEntryPoint;
+    return !AddressOfEntryPoint || !DllEntry->EntryPoint || AddressOfEntryPoint >= OutHeaders->OptionalHeader.SizeOfHeaders;
+}
+
+BOOL __fastcall LdrpIsExecutableRelocatedImage(PIMAGE_DOS_HEADER DllBase)
+{
+    MEMORY_IMAGE_INFORMATION MemoryInformation; // [rsp+30h] [rbp-28h] BYREF
+    PIMAGE_NT_HEADERS OutHeaders; // [rsp+68h] [rbp+10h] BYREF
+
+    return NT_SUCCESS(RtlImageNtHeaderEx(3u, DllBase, 0i64, &OutHeaders) >= 0) && (PIMAGE_DOS_HEADER)OutHeaders->OptionalHeader.ImageBase == DllBase
+        && NT_SUCCESS(ZwQueryVirtualMemory((HANDLE)-1, DllBase, MemoryImageInformation, &MemoryInformation, 0x18, 0))
+        && MemoryInformation.ImageBase == DllBase
+        && (MemoryInformation.ImageFlags & 2) == 0
+        && (MemoryInformation.ImageFlags & 1) == 0;
+}
+
+NTSTATUS __fastcall LdrpInitializeGraphRecurse(LDR_DDAG_NODE* DdagNode, NTSTATUS* pStatus, char* Unknown)
+{
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    if (DdagNode->State == LdrModulesInitError)
+        return STATUS_DLL_INIT_FAILED;
+
+    LDR_DDAG_NODE* DdagNode2 = (LDR_DDAG_NODE*)DdagNode->Dependencies.Tail;
+    CHAR Unknown2_2 = 0;
+    CHAR Unknown2 = 0;
+
+    BOOLEAN JumpIn = FALSE;
+    do
+    {
+        if (DdagNode2)
+        {
+            LDR_DDAG_NODE* DdagNode2_2 = DdagNode2;
+            do
+            {
+                DdagNode2_2 = (LDR_DDAG_NODE*)DdagNode2_2->Modules.Flink;
+                if ((DdagNode2_2->LoadCount & 1) == 0)
+                {
+                    LDR_DDAG_NODE* Blink = (LDR_DDAG_NODE*)DdagNode2_2->Modules.Blink;
+                    if (Blink->State == LdrModulesReadyToInit)
+                    {
+                        Status = LdrpInitializeGraphRecurse(Blink, pStatus, &Unknown2);
+                        if (!NT_SUCCESS(Status))
+                        {
+                            JumpIn = TRUE;
+                            break;
+                        }
+                        Unknown2_2 = Unknown2;
+                    }
+                    else
+                    {
+                        if (Blink->State == LdrModulesInitError)
+                        {
+                            Status = STATUS_DLL_INIT_FAILED;
+                            {
+                                JumpIn = TRUE;
+                                break;
+                            }
+                        }
+                        if (Blink->State == LdrModulesInitializing)
+                            Unknown2_2 = 1;
+                        Unknown2 = Unknown2_2;
+                    }
+                }
+            } while (DdagNode2_2 != DdagNode2);
+
+            if (JumpIn)
+                break;
+
+            if (Unknown2_2)
+            {
+                LDR_DDAG_NODE* DdagNode3 = (LDR_DDAG_NODE*)DdagNode->Modules.Flink;
+                *Unknown = 1;
+                LDR_SERVICE_TAG_RECORD* ServiceTagList = DdagNode3->ServiceTagList;
+                if (ServiceTagList)
+                {
+                    if (pStatus != *(NTSTATUS**)&ServiceTagList[2].ServiceTag)
+                        return STATUS_SUCCESS;
+                }
+            }
+        }
+    } while (FALSE);
+
+    if (!JumpIn)
+        Status = LdrpInitializeNode(DdagNode);
+
+    if (JumpIn || !NT_SUCCESS(Status))
+        DdagNode->State = LdrModulesInitError;
+
+    return Status;
+}
+
+NTSTATUS __fastcall LdrpInitializeNode(_LDR_DDAG_NODE* DdagNode)
+{
+    PVOID* p_ParentDllBase;
+    NTSTATUS Status;
+    LDR_DATA_TABLE_ENTRY* i;
+    LDR_DATA_TABLE_ENTRY* LdrEntry_2;
+    PVOID EntryPoint;
+    LPVOID ContextRecord;
+    NTSTATUS Status_2;
+    NTSTATUS Status_3;
+    BOOLEAN CallSuccess;
+    UINT_PTR CurrentDllIniter;
+    UNICODE_STRING FullDllName;
+    LPVOID ContextRecord_2;
+    RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_EXTENDED StackFrameExtended;
+    UINT_PTR v20;
+    PUNICODE_STRING pPreorderNumber;
+        
+    LDR_DDAG_STATE* pState = &DdagNode->State;
+    *(UINT_PTR*)&FullDllName.Length = (UINT_PTR)&DdagNode->State;
+    DdagNode->State = LdrModulesInitializing;
+    LDR_DATA_TABLE_ENTRY* Blink = (LDR_DATA_TABLE_ENTRY*)DdagNode->Modules.Blink;
+    LDR_DATA_TABLE_ENTRY* LdrEntry = *LdrpImageEntry;
+    UINT_PTR** v4 = (UINT_PTR**)*qword_1843B8;
+    while (Blink != (LDR_DATA_TABLE_ENTRY*)DdagNode)
+    {
+        //if (&Blink[-1].DdagNode != (_LDR_DDAG_NODE**)LdrEntry)
+        if (CONTAINING_RECORD(Blink, LDR_DATA_TABLE_ENTRY, DdagNode) != LdrEntry)
+        {
+            //p_ParentDllBase = &Blink[-1].ParentDllBase
+            p_ParentDllBase = (PVOID*)CONTAINING_RECORD(Blink, LDR_DATA_TABLE_ENTRY, ParentDllBase);
+            if (*v4 != qword_1843B0)
+                __fastfail(3u);
+
+            *p_ParentDllBase = qword_1843B0;
+            Blink[-1].SwitchBackContext = v4;
+            *v4 = (UINT_PTR*)p_ParentDllBase;
+            v4 = (UINT_PTR**)&Blink[-1].ParentDllBase;
+            *qword_1843B8 = (UINT_PTR**)v4;
+        }
+
+        Blink = (LDR_DATA_TABLE_ENTRY*)Blink->InLoadOrderLinks.Blink;
+    }
+    Status = STATUS_SUCCESS;
+    for (i = (LDR_DATA_TABLE_ENTRY*)DdagNode->Modules.Blink; i != (LDR_DATA_TABLE_ENTRY*)DdagNode; i = (LDR_DATA_TABLE_ENTRY*)i->InLoadOrderLinks.Blink)
+    {
+        LdrEntry_2 = (LDR_DATA_TABLE_ENTRY*)((char*)i - 160);
+        //if (&i[-1].DdagNode != (LDR_DDAG_NODE**)LdrEntry)
+        if (CONTAINING_RECORD(i, LDR_DATA_TABLE_ENTRY, DdagNode) != LdrEntry)
+        {
+            if (LdrEntry_2->LoadReason == LoadReasonPatchImage)
+            {
+                Status_2 = LdrpApplyPatchImage((PLDR_DATA_TABLE_ENTRY)&i[-1].DdagNode);
+                Status = Status_2;
+                if (!NT_SUCCESS(Status_2))
+                {
+                    FullDllName = LdrEntry_2->FullDllName;
+                    Status_3 = Status_2;
+                    LdrpLogInternal("minkernel\\ntdll\\ldrsnap.c", 1392, "LdrpInitializeNode", 0, "Applying patch \"%wZ\" failed - Status = 0x%x\n", &FullDllName, *(UINT_PTR*)&Status_3);
+                    break;
+                }
+            }
+
+            CurrentDllIniter = *LdrpCurrentDllInitializer;
+            //*LdrpCurrentDllInitializer = (UINT_PTR)&i[-1].DdagNode;
+            *LdrpCurrentDllInitializer = (UINT_PTR)CONTAINING_RECORD(i, LDR_DATA_TABLE_ENTRY, DdagNode);
+            EntryPoint = LdrEntry_2->EntryPoint;
+            pPreorderNumber = &LdrEntry_2->FullDllName;
+            LdrpLogInternal("minkernel\\ntdll\\ldrsnap.c", 1411, "LdrpInitializeNode", 2u, "Calling init routine %p for DLL \"%wZ\"\n", EntryPoint, &LdrEntry_2->FullDllName);
+            CallSuccess = TRUE;
+            StackFrameExtended.Size = 0x48;
+            StackFrameExtended.Format = 1;
+            memset((char*)&StackFrameExtended.Frame.Previous + 4, 0, 48);
+            v20 = 0;
+            RtlActivateActivationContextUnsafeFast(&StackFrameExtended, LdrEntry_2->EntryPointActivationContext);
+            if (LdrEntry_2->TlsIndex)
+                //LdrpCallTlsInitializers(1i64, &i[-1].DdagNode);
+                LdrpCallTlsInitializers(1, CONTAINING_RECORD(i, LDR_DATA_TABLE_ENTRY, DdagNode));
+
+            if (EntryPoint)
+            {
+                ContextRecord = 0;
+                if ((LdrEntry_2->FlagGroup[0] & ProcessStaticImport) != 0)
+                    ContextRecord = *LdrpProcessInitContextRecord;
+
+                ContextRecord_2 = ContextRecord;
+                CallSuccess = LdrpCallInitRoutine((BOOL(__fastcall*)(HINSTANCE, DWORD, LPVOID))EntryPoint, LdrEntry_2->DllBase, DLL_PROCESS_ATTACH, ContextRecord);
+            }
+            RtlDeactivateActivationContextUnsafeFast(&StackFrameExtended);
+            *LdrpCurrentDllInitializer = CurrentDllIniter;
+            LdrEntry_2->Flags |= ProcessAttachCalled;
+            if (!CallSuccess)
+            {
+                LdrpLogInternal("minkernel\\ntdll\\ldrsnap.c", 0x5B7, "LdrpInitializeNode", 0, "Init routine %p for DLL \"%wZ\" failed during DLL_PROCESS_ATTACH\n", EntryPoint, pPreorderNumber);
+                Status = STATUS_DLL_INIT_FAILED;
+                LdrEntry_2->Flags |= ProcessAttachFailed;
+                break;
+            }
+
+            LdrpLogDllState((ULONG)LdrEntry_2->DllBase, pPreorderNumber, 0x14AEu);
+            LdrEntry = *LdrpImageEntry;
+        }
+    }
+    *pState = Status != 0 ? LdrModulesInitError : LdrModulesReadyToRun;
+    return Status;
+}
+
+BOOLEAN __fastcall LdrpCallInitRoutine(BOOL(__fastcall* DllMain)(HINSTANCE hInstDll, DWORD fdwReason, LPVOID lpvReserved), PIMAGE_DOS_HEADER DllBase, unsigned int One, LPVOID ContextRecord)
+{
+    BOOLEAN ReturnVal = TRUE;
+
+    PCHAR LoggingVar = (PCHAR)&kUserSharedData->UserModeGlobalLogger[2];
+    PCHAR LoggingVar2 = 0;
+    if (RtlGetCurrentServiceSessionId())
+        LoggingVar2 = (PCHAR)&NtCurrentPeb()->SharedData->NtSystemRoot[253];
+    else
+        LoggingVar2 = (PCHAR)&kUserSharedData->UserModeGlobalLogger[2];
+
+    PCHAR LoggingVar3 = 0;
+    PCHAR LoggingVar4 = 0;
+    if (*LoggingVar2 && (NtCurrentPeb()->TracingFlags & 4) != 0)
+    {
+        LoggingVar3 = (PCHAR)&kUserSharedData->UserModeGlobalLogger[2] + 1;
+        if (RtlGetCurrentServiceSessionId())
+            LoggingVar4 = (char*)&NtCurrentPeb()->SharedData->NtSystemRoot[253] + 1;
+        else
+            LoggingVar4 = (PCHAR)&kUserSharedData->UserModeGlobalLogger[2] + 1;
+
+        // 0x20 is SPACE char.
+        if ((*LoggingVar4 & ' ') != 0)
+            LdrpLogEtwEvent(0x14A3u, (ULONGLONG)DllBase, 0xFF, 0xFF);
+    }
+    else
+    {
+        LoggingVar3 = (PCHAR)&kUserSharedData->UserModeGlobalLogger[2] + 1;
+    }
+
+    // DLL_PROCESS_ATTACH (1)
+    printf("Press key to call dllmain.\n");
+    getchar();
+
+    ReturnVal = DllMain((HINSTANCE)DllBase, One, ContextRecord);
+    if (RtlGetCurrentServiceSessionId())
+        LoggingVar = (PCHAR)&NtCurrentPeb()->SharedData->NtSystemRoot[253];
+
+    if (*LoggingVar && (NtCurrentPeb()->TracingFlags & 4) != 0)
+    {
+        if (RtlGetCurrentServiceSessionId())
+            LoggingVar3 = (char*)&NtCurrentPeb()->SharedData->NtSystemRoot[253] + 1;
+
+        // 0x20 is SPACE char.
+        if ((*LoggingVar3 & ' ') != 0)
+            LdrpLogEtwEvent(0x1496u, (ULONGLONG)DllBase, 0xFF, 0xFF);
+    }
+
+    ULONG LoggingVar5 = 0;
+    if (!ReturnVal && One == 1)
+    {
+        LoggingVar5 = 1;
+        LdrpLogError(STATUS_DLL_INIT_FAILED, 0x1496u, LoggingVar5, 0i64);
+    }
+
+    return ReturnVal;
+}
+
 // Implemented inside LOADLIBRARY class to use WID_HIDDEN
 NTSTATUS __fastcall WID::Loader::LOADLIBRARY::LdrpThreadTokenSetMainThreadToken()
 {
@@ -465,7 +810,7 @@ NTSTATUS __fastcall WID::Loader::LOADLIBRARY::LdrpThreadTokenUnsetMainThreadToke
 
     Status = NtClose(*LdrpMainThreadToken);
     *LdrpMainThreadToken = NULL;
-    WID_HIDDEN( LdrpLogInternal("minkernel\\ntdll\\ldrapi.c", 3566, "LdrpThreadTokenUnsetMainThreadToken", 2u, "Status: 0x%x\n", Status); )
+    WID_HIDDEN( LdrpLogInternal("minkernel\\ntdll\\ldrapi.c", 0xDEE, "LdrpThreadTokenUnsetMainThreadToken", 2u, "Status: 0x%x\n", Status); )
     return Status;
 }
 
@@ -589,7 +934,6 @@ NTSTATUS __fastcall WID::Loader::LOADLIBRARY::LdrpResolveDllName(LDRP_LOAD_CONTE
     return Status;
 }
 
-
 // Planning to implement them all in the future.
 tNtOpenThreadToken                  NtOpenThreadToken                   = nullptr;
 tNtClose                            NtClose                             = nullptr;
@@ -613,62 +957,79 @@ tRtlReleasePrivilege                RtlReleasePrivilege                 = nullpt
 tRtlCompareUnicodeStrings           RtlCompareUnicodeStrings            = nullptr;
 tRtlImageNtHeader                   RtlImageNtHeader                    = nullptr;
 tRtlReleaseActivationContext        RtlReleaseActivationContext         = nullptr;
+tRtlCharToInteger                   RtlCharToInteger                    = nullptr;
+tRtlActivateActivationContextUnsafeFast RtlActivateActivationContextUnsafeFast = nullptr;
+tRtlDeactivateActivationContextUnsafeFast RtlDeactivateActivationContextUnsafeFast = nullptr;
 
 // Signatured
-tLdrpLogInternal			                LdrpLogInternal				            = nullptr;
-tLdrpInitializeDllPath		                LdrpInitializeDllPath		            = nullptr;
-tLdrpDereferenceModule		                LdrpDereferenceModule		            = nullptr;
-tLdrpLogDllState			                LdrpLogDllState				            = nullptr;
-tLdrpPreprocessDllName		                LdrpPreprocessDllName		            = nullptr;
-tLdrpFastpthReloadedDll		                LdrpFastpthReloadedDll		            = nullptr;
-tLdrpDrainWorkQueue			                LdrpDrainWorkQueue			            = nullptr;
-tLdrpFindLoadedDllByHandle	                LdrpFindLoadedDllByHandle	            = nullptr;
-tLdrpDropLastInProgressCount                LdrpDropLastInProgressCount             = nullptr;
-tLdrpQueryCurrentPatch                      LdrpQueryCurrentPatch                   = nullptr;
-tLdrpUndoPatchImage                         LdrpUndoPatchImage                      = nullptr;
-tLdrpDetectDetour                           LdrpDetectDetour                        = nullptr;
-tLdrpFindOrPrepareLoadingModule             LdrpFindOrPrepareLoadingModule          = nullptr;
-tLdrpFreeLoadContext                        LdrpFreeLoadContext                     = nullptr;
-tLdrpCondenseGraph                          LdrpCondenseGraph                       = nullptr;
-tLdrpBuildForwarderLink                     LdrpBuildForwarderLink                  = nullptr;
-tLdrpPinModule                              LdrpPinModule                           = nullptr;
-tLdrpApplyPatchImage                        LdrpApplyPatchImage                     = nullptr;
-tLdrpFreeLoadContextOfNode                  LdrpFreeLoadContextOfNode               = nullptr;
-tLdrpDecrementModuleLoadCountEx             LdrpDecrementModuleLoadCountEx          = nullptr;
-tLdrpLogError                               LdrpLogError                            = nullptr;
-tLdrpLogDeprecatedDllEtwEvent               LdrpLogDeprecatedDllEtwEvent            = nullptr;
-tLdrpLogLoadFailureEtwEvent                 LdrpLogLoadFailureEtwEvent              = nullptr;
-tLdrpReportError                            LdrpReportError                         = nullptr;
-tLdrpResolveDllName                         LdrpResolveDllName                      = nullptr;
-tLdrpAppCompatRedirect                      LdrpAppCompatRedirect                   = nullptr;
-tLdrpHashUnicodeString                      LdrpHashUnicodeString                   = nullptr;
-tLdrpFindExistingModule                     LdrpFindExistingModule                  = nullptr;
-tLdrpLoadContextReplaceModule               LdrpLoadContextReplaceModule            = nullptr;
-tLdrpCheckForRetryLoading                   LdrpCheckForRetryLoading                = nullptr;
-tLdrpLogEtwEvent                            LdrpLogEtwEvent                         = nullptr;
-tLdrpCheckComponentOnDemandEtwEvent         LdrpCheckComponentOnDemandEtwEvent      = nullptr;
-tLdrpValidateIntegrityContinuity            LdrpValidateIntegrityContinuity         = nullptr;
-tLdrpSetModuleSigningLevel                  LdrpSetModuleSigningLevel               = nullptr;
-tLdrpCodeAuthzCheckDllAllowed               LdrpCodeAuthzCheckDllAllowed            = nullptr;
-tLdrpGetFullPath                            LdrpGetFullPath                         = nullptr;
-tLdrpAllocateUnicodeString                  LdrpAllocateUnicodeString               = nullptr;
-tLdrpAppendUnicodeStringToFilenameBuffer    LdrpAppendUnicodeStringToFilenameBuffer = nullptr;
-tLdrpGetNtPathFromDosPath                   LdrpGetNtPathFromDosPath                = nullptr;
-tLdrpFindLoadedDllByMappingLockHeld         LdrpFindLoadedDllByMappingLockHeld      = nullptr;
-tLdrpInsertDataTableEntry                   LdrpInsertDataTableEntry                = nullptr;
-tLdrpInsertModuleToIndexLockHeld            LdrpInsertModuleToIndexLockHeld         = nullptr;
-tLdrpLogEtwHotPatchStatus                   LdrpLogEtwHotPatchStatus                = nullptr;
-tLdrpLogNewDllLoad                          LdrpLogNewDllLoad                       = nullptr;
-tLdrpProcessMachineMismatch                 LdrpProcessMachineMismatch              = nullptr;
-tRtlQueryImageFileKeyOption                 RtlQueryImageFileKeyOption              = nullptr;
-tRtlpImageDirectoryEntryToDataEx            RtlpImageDirectoryEntryToDataEx         = nullptr;
-tLdrpLogDllRelocationEtwEvent               LdrpLogDllRelocationEtwEvent            = nullptr;
-tLdrpNotifyLoadOfGraph                      LdrpNotifyLoadOfGraph                   = nullptr;
-tLdrpDynamicShimModule                      LdrpDynamicShimModule                   = nullptr;
-tLdrpAcquireLoaderLock                      LdrpAcquireLoaderLock                   = nullptr;
-tLdrpInitializeGraphRecurse                 LdrpInitializeGraphRecurse              = nullptr;
-tLdrpReleaseLoaderLock                      LdrpReleaseLoaderLock                   = nullptr;
-tLdrpCheckPagesForTampering                 LdrpCheckPagesForTampering              = nullptr;
-tLdrpLoadDependentModuleA                   LdrpLoadDependentModuleA                = nullptr;
-tLdrpLoadDependentModuleW                   LdrpLoadDependentModuleW                = nullptr;
-tLdrpQueueWork                              LdrpQueueWork                           = nullptr;
+tLdrpLogInternal			                        LdrpLogInternal				            = nullptr;
+tLdrpInitializeDllPath		                        LdrpInitializeDllPath		            = nullptr;
+tLdrpDereferenceModule		                        LdrpDereferenceModule		            = nullptr;
+tLdrpLogDllState			                        LdrpLogDllState				            = nullptr;
+tLdrpPreprocessDllName		                        LdrpPreprocessDllName		            = nullptr;
+tLdrpFastpthReloadedDll		                        LdrpFastpthReloadedDll		            = nullptr;
+tLdrpDrainWorkQueue			                        LdrpDrainWorkQueue			            = nullptr;
+tLdrpFindLoadedDllByHandle	                        LdrpFindLoadedDllByHandle	            = nullptr;
+tLdrpDropLastInProgressCount                        LdrpDropLastInProgressCount             = nullptr;
+tLdrpQueryCurrentPatch                              LdrpQueryCurrentPatch                   = nullptr;
+tLdrpUndoPatchImage                                 LdrpUndoPatchImage                      = nullptr;
+tLdrpDetectDetour                                   LdrpDetectDetour                        = nullptr;
+tLdrpFindOrPrepareLoadingModule                     LdrpFindOrPrepareLoadingModule          = nullptr;
+tLdrpFreeLoadContext                                LdrpFreeLoadContext                     = nullptr;
+tLdrpCondenseGraph                                  LdrpCondenseGraph                       = nullptr;
+tLdrpBuildForwarderLink                             LdrpBuildForwarderLink                  = nullptr;
+tLdrpPinModule                                      LdrpPinModule                           = nullptr;
+tLdrpApplyPatchImage                                LdrpApplyPatchImage                     = nullptr;
+tLdrpFreeLoadContextOfNode                          LdrpFreeLoadContextOfNode               = nullptr;
+tLdrpDecrementModuleLoadCountEx                     LdrpDecrementModuleLoadCountEx          = nullptr;
+tLdrpLogError                                       LdrpLogError                            = nullptr;
+tLdrpLogDeprecatedDllEtwEvent                       LdrpLogDeprecatedDllEtwEvent            = nullptr;
+tLdrpLogLoadFailureEtwEvent                         LdrpLogLoadFailureEtwEvent              = nullptr;
+tLdrpReportError                                    LdrpReportError                         = nullptr;
+tLdrpResolveDllName                                 LdrpResolveDllName                      = nullptr;
+tLdrpAppCompatRedirect                              LdrpAppCompatRedirect                   = nullptr;
+tLdrpHashUnicodeString                              LdrpHashUnicodeString                   = nullptr;
+tLdrpFindExistingModule                             LdrpFindExistingModule                  = nullptr;
+tLdrpLoadContextReplaceModule                       LdrpLoadContextReplaceModule            = nullptr;
+tLdrpCheckForRetryLoading                           LdrpCheckForRetryLoading                = nullptr;
+tLdrpLogEtwEvent                                    LdrpLogEtwEvent                         = nullptr;
+tLdrpCheckComponentOnDemandEtwEvent                 LdrpCheckComponentOnDemandEtwEvent      = nullptr;
+tLdrpValidateIntegrityContinuity                    LdrpValidateIntegrityContinuity         = nullptr;
+tLdrpSetModuleSigningLevel                          LdrpSetModuleSigningLevel               = nullptr;
+tLdrpCodeAuthzCheckDllAllowed                       LdrpCodeAuthzCheckDllAllowed            = nullptr;
+tLdrpGetFullPath                                    LdrpGetFullPath                         = nullptr;
+tLdrpAllocateUnicodeString                          LdrpAllocateUnicodeString               = nullptr;
+tLdrpAppendUnicodeStringToFilenameBuffer            LdrpAppendUnicodeStringToFilenameBuffer = nullptr;
+tLdrpGetNtPathFromDosPath                           LdrpGetNtPathFromDosPath                = nullptr;
+tLdrpFindLoadedDllByMappingLockHeld                 LdrpFindLoadedDllByMappingLockHeld      = nullptr;
+tLdrpInsertDataTableEntry                           LdrpInsertDataTableEntry                = nullptr;
+tLdrpInsertModuleToIndexLockHeld                    LdrpInsertModuleToIndexLockHeld         = nullptr;
+tLdrpLogEtwHotPatchStatus                           LdrpLogEtwHotPatchStatus                = nullptr;
+tLdrpLogNewDllLoad                                  LdrpLogNewDllLoad                       = nullptr;
+tLdrpProcessMachineMismatch                         LdrpProcessMachineMismatch              = nullptr;
+tRtlQueryImageFileKeyOption                         RtlQueryImageFileKeyOption              = nullptr;
+tRtlpImageDirectoryEntryToDataEx                    RtlpImageDirectoryEntryToDataEx         = nullptr;
+tLdrpLogDllRelocationEtwEvent                       LdrpLogDllRelocationEtwEvent            = nullptr;
+tLdrpNotifyLoadOfGraph                              LdrpNotifyLoadOfGraph                   = nullptr;
+tLdrpDynamicShimModule                              LdrpDynamicShimModule                   = nullptr;
+tLdrpAcquireLoaderLock                              LdrpAcquireLoaderLock                   = nullptr;
+tLdrpReleaseLoaderLock                              LdrpReleaseLoaderLock                   = nullptr;
+tLdrpCheckPagesForTampering                         LdrpCheckPagesForTampering              = nullptr;
+tLdrpLoadDependentModuleA                           LdrpLoadDependentModuleA                = nullptr;
+tLdrpLoadDependentModuleW                           LdrpLoadDependentModuleW                = nullptr;
+tLdrpQueueWork                                      LdrpQueueWork                           = nullptr;
+tLdrpHandleTlsData                                  LdrpHandleTlsData                       = nullptr;
+tLdrControlFlowGuardEnforcedWithExportSuppression   LdrControlFlowGuardEnforcedWithExportSuppression = nullptr;
+tLdrpUnsuppressAddressTakenIat                      LdrpUnsuppressAddressTakenIat           = nullptr;
+tLdrControlFlowGuardEnforced                        LdrControlFlowGuardEnforced             = nullptr;
+tRtlpxLookupFunctionTable                           RtlpxLookupFunctionTable                = nullptr; 
+tLdrpCheckRedirection                               LdrpCheckRedirection                    = nullptr;
+tCompatCachepLookupCdb                              CompatCachepLookupCdb                   = nullptr;
+tLdrpGenRandom                                      LdrpGenRandom                           = nullptr;
+tLdrInitSecurityCookie                              LdrInitSecurityCookie                   = nullptr;
+tLdrpCfgProcessLoadConfig                           LdrpCfgProcessLoadConfig                = nullptr;
+tRtlInsertInvertedFunctionTable                     RtlInsertInvertedFunctionTable          = nullptr;
+tLdrpSignalModuleMapped                             LdrpSignalModuleMapped                  = nullptr;
+tAVrfDllLoadNotification                            AVrfDllLoadNotification                 = nullptr;
+tLdrpSendDllNotifications                           LdrpSendDllNotifications                = nullptr;
+tLdrpCallTlsInitializers                            LdrpCallTlsInitializers                 = nullptr;

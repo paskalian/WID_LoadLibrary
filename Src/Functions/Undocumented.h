@@ -163,15 +163,19 @@ typedef struct _LDR_DDAG_NODE
     union
     {
         LDRP_CSLIST Dependencies;
-        SINGLE_LIST_ENTRY RemovalLink;
+        SINGLE_LIST_ENTRY* RemovalLink;
     };
     LDRP_CSLIST IncomingDependencies;
     LDR_DDAG_STATE State;
-    SINGLE_LIST_ENTRY CondenseLink;
+    SINGLE_LIST_ENTRY* CondenseLink;
     ULONG PreorderNumber;
+    ULONG Pad;
 } LDR_DDAG_NODE, * PLDR_DDAG_NODE;
 
 // rev
+
+
+
 typedef struct _LDR_DEPENDENCY_RECORD
 {
     SINGLE_LIST_ENTRY DependencyLink;
@@ -648,6 +652,25 @@ typedef struct _ACTIVATION_CONTEXT_STACK
     ULONG NextCookieSequenceNumber;
     ULONG StackId;
 } ACTIVATION_CONTEXT_STACK, * PACTIVATION_CONTEXT_STACK;
+
+typedef struct _RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_BASIC
+{
+    SIZE_T Size;
+    ULONG Format;
+    RTL_ACTIVATION_CONTEXT_STACK_FRAME Frame;
+} RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_BASIC, * PRTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_BASIC;
+
+typedef struct _RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_EXTENDED
+{
+    SIZE_T Size;
+    ULONG Format;
+    RTL_ACTIVATION_CONTEXT_STACK_FRAME Frame;
+    PVOID Extra1;
+    PVOID Extra2;
+    PVOID Extra3;
+    PVOID Extra4;
+} RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_EXTENDED, * PRTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_EXTENDED;
+
 #define GDI_BATCH_BUFFER_SIZE 310
 
 typedef struct _GDI_TEB_BATCH
@@ -847,14 +870,13 @@ typedef struct _LDRP_LOAD_CONTEXT
     UNICODE_STRING BaseDllName;
     LDR_UNKSTRUCT* UnkStruct;
     HANDLE SectionHandle;
-    __int64 Flags;
+    UINT_PTR Flags;
     NTSTATUS* pStatus;
     LDR_DATA_TABLE_ENTRY* Entry;
     _LIST_ENTRY WorkQueueListEntry;
     LDR_DATA_TABLE_ENTRY* ReplacedEntry;
     LDR_DATA_TABLE_ENTRY** pvImports;
-    ULONG ImportDllCount;
-    LONG TaskCount;
+    PVOID* IATCheck;
     PVOID pvIAT;
     ULONG SizeOfIAT;
     ULONG CurrentDll;
@@ -874,9 +896,26 @@ typedef struct _LDRP_LOAD_CONTEXT
 
 struct LDRP_FILENAME_BUFFER
 {
-    UNICODE_STRING pFileName;
+    UNICODE_STRING pFileName{};
     wchar_t FileName[128]{};
 };
+
+typedef struct _MEMORY_IMAGE_INFORMATION
+{
+    PVOID ImageBase;
+    SIZE_T SizeOfImage;
+    union
+    {
+        ULONG ImageFlags;
+        struct
+        {
+            ULONG ImagePartialMap : 1;
+            ULONG ImageNotExecutable : 1;
+            ULONG ImageSigningLevel : 4; // REDSTONE3
+            ULONG Reserved : 26;
+        };
+    };
+} MEMORY_IMAGE_INFORMATION, * PMEMORY_IMAGE_INFORMATION;
 
 enum SECTION_INHERIT
 {
