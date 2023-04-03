@@ -587,6 +587,14 @@ typedef struct _PEB {
     };
 } PEB, * PPEB;
 
+struct FUNCTION_TABLE_DATA
+{
+    UINT_PTR TableAddress;
+    PIMAGE_DOS_HEADER ImageBase;
+    DWORD ImageSize;
+    DWORD Size;
+};
+
 typedef struct _OBJECT_ATTRIBUTES {
     ULONG           Length;
     HANDLE          RootDirectory;
@@ -870,13 +878,13 @@ typedef struct _LDRP_LOAD_CONTEXT
     UNICODE_STRING BaseDllName;
     LDR_UNKSTRUCT* UnkStruct;
     HANDLE SectionHandle;
-    UINT_PTR Flags;
+    DWORD Flags;
     NTSTATUS* pStatus;
     LDR_DATA_TABLE_ENTRY* Entry;
     _LIST_ENTRY WorkQueueListEntry;
     LDR_DATA_TABLE_ENTRY* ReplacedEntry;
     LDR_DATA_TABLE_ENTRY** pvImports;
-    PVOID* IATCheck;
+    LDR_DATA_TABLE_ENTRY** IATCheck;
     PVOID pvIAT;
     ULONG SizeOfIAT;
     ULONG CurrentDll;

@@ -82,51 +82,55 @@ namespace WID
 			NTSTATUS Load();
 
 			// NT Functions
-			NTSTATUS __fastcall LdrpThreadTokenSetMainThreadToken();
-			NTSTATUS __fastcall LdrpThreadTokenUnsetMainThreadToken();
+			NTSTATUS __fastcall LdrpThreadTokenSetMainThreadToken(); // CHECKED.
+			NTSTATUS __fastcall LdrpThreadTokenUnsetMainThreadToken(); // CHECKED.
 
-			LDR_DATA_TABLE_ENTRY* __fastcall LdrpHandleReplacedModule(LDR_DATA_TABLE_ENTRY* LdrDataTableEntry);
-			NTSTATUS __fastcall LdrpFreeReplacedModule(LDR_DATA_TABLE_ENTRY* LdrDataTableEntry);
-			NTSTATUS __fastcall LdrpResolveDllName(LDRP_LOAD_CONTEXT* LoadContext, LDRP_FILENAME_BUFFER* FileNameBuffer, PUNICODE_STRING BaseDllName, PUNICODE_STRING FullDllName, DWORD Flags);
+			LDR_DATA_TABLE_ENTRY* __fastcall LdrpHandleReplacedModule(LDR_DATA_TABLE_ENTRY* LdrEntry); // CHECKED.
+			NTSTATUS __fastcall LdrpFreeReplacedModule(LDR_DATA_TABLE_ENTRY* LdrEntry); // CHECKED.
+			NTSTATUS __fastcall LdrpResolveDllName(LDRP_LOAD_CONTEXT* LoadContext, LDRP_FILENAME_BUFFER* FileNameBuffer, PUNICODE_STRING BaseDllName, PUNICODE_STRING FullDllName, DWORD Flags); // CHECKED.
+			NTSTATUS __fastcall LdrpFindDllActivationContext(LDR_DATA_TABLE_ENTRY* LdrEntry); // CHECKED.
 
 			// Using directly is not recommended.
-			HMODULE __fastcall fLoadLibrary(PTCHAR lpLibFileName);
-			HMODULE __fastcall fLoadLibraryA(LPCSTR lpLibFileName);
-			HMODULE __fastcall fLoadLibraryW(LPCWSTR lpLibFileName);
-			HMODULE __fastcall fLoadLibraryExA(LPCSTR lpLibFileName, HANDLE hFile, DWORD dwFlags);
-			HMODULE __fastcall fLoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags);
+			HMODULE __fastcall fLoadLibrary(PTCHAR lpLibFileName); // CHECKED.
+			HMODULE __fastcall fLoadLibraryA(LPCSTR lpLibFileName); // CHECKED.
+			HMODULE __fastcall fLoadLibraryW(LPCWSTR lpLibFileName); // CHECKED.
+			HMODULE __fastcall fLoadLibraryExA(LPCSTR lpLibFileName, HANDLE hFile, DWORD dwFlags); // CHECKED.
+			HMODULE __fastcall fLoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags); // CHECKED.
 			
-			NTSTATUS __fastcall fLdrLoadDll(PWSTR DllPath, PULONG pFlags, PUNICODE_STRING DllName, PVOID* BaseAddress);
-			NTSTATUS __fastcall fLdrpLoadDll(PUNICODE_STRING DllName, LDR_UNKSTRUCT* DllPathInited, ULONG Flags, LDR_DATA_TABLE_ENTRY** DllEntry);
-			NTSTATUS __fastcall fLdrpLoadDllInternal(PUNICODE_STRING FullPath, LDR_UNKSTRUCT* DllPathInited, ULONG Flags, ULONG LdrFlags, PLDR_DATA_TABLE_ENTRY LdrEntry, PLDR_DATA_TABLE_ENTRY LdrEntry2, PLDR_DATA_TABLE_ENTRY* DllEntry, NTSTATUS* pStatus, ULONGLONG Zero);
+			NTSTATUS __fastcall fLdrLoadDll(PWSTR DllPath, PULONG pFlags, PUNICODE_STRING DllName, PVOID* BaseAddress); // CHECKED.
+			NTSTATUS __fastcall fLdrpLoadDll(PUNICODE_STRING DllName, LDR_UNKSTRUCT* DllPathInited, ULONG Flags, LDR_DATA_TABLE_ENTRY** DllEntry); // CHECKED.
+			NTSTATUS __fastcall fLdrpLoadDllInternal(PUNICODE_STRING FullPath, LDR_UNKSTRUCT* DllPathInited, ULONG Flags, ULONG LdrFlags, PLDR_DATA_TABLE_ENTRY LdrEntry, PLDR_DATA_TABLE_ENTRY LdrEntry2, PLDR_DATA_TABLE_ENTRY* DllEntry, NTSTATUS* pStatus, ULONG Zero); // CHECKED. // This function is responsible for the linking issue.
 
-			NTSTATUS __fastcall fLdrpProcessWork(PLDRP_LOAD_CONTEXT LoadContext, BOOLEAN IsLoadOwner);
+			NTSTATUS __fastcall fLdrpProcessWork(PLDRP_LOAD_CONTEXT LoadContext, BOOLEAN IsLoadOwner); // CHECKED.
 			NTSTATUS __fastcall fLdrpSnapModule(PLDRP_LOAD_CONTEXT LoadContext);
 			NTSTATUS __fastcall fLdrpDoPostSnapWork(LDRP_LOAD_CONTEXT* LoadContext);
 
 			NTSTATUS __fastcall fLdrpMapDllRetry(PLDRP_LOAD_CONTEXT LoadContext);
-			NTSTATUS __fastcall fLdrpMapDllFullPath(PLDRP_LOAD_CONTEXT LoadContext);
+			NTSTATUS __fastcall fLdrpMapDllFullPath(PLDRP_LOAD_CONTEXT LoadContext); // CHECKED.
 			NTSTATUS __fastcall fLdrpMapDllSearchPath(PLDRP_LOAD_CONTEXT LoadContext);
-			NTSTATUS __fastcall fLdrpMapDllNtFileName(PLDRP_LOAD_CONTEXT LoadContext, LDRP_FILENAME_BUFFER* FileNameBuffer);
-			NTSTATUS __fastcall fLdrpMapDllWithSectionHandle(PLDRP_LOAD_CONTEXT LoadContext, HANDLE SectionHandle);
+
+			NTSTATUS __fastcall fLdrpMapDllNtFileName(PLDRP_LOAD_CONTEXT LoadContext, LDRP_FILENAME_BUFFER* FileNameBuffer); // CHECKED.
+			NTSTATUS __fastcall fLdrpMapDllWithSectionHandle(PLDRP_LOAD_CONTEXT LoadContext, HANDLE SectionHandle); // CHECKED.
 
 			NTSTATUS __fastcall fLdrpMinimalMapModule(PLDRP_LOAD_CONTEXT LoadContext, HANDLE SectionHandle);
 			NTSTATUS __fastcall fLdrpMapViewOfSection(HANDLE SectionHandle, ULONG ProtectFlags, PIMAGE_DOS_HEADER* BaseAddress, DWORD Unknown, PULONG ViewSize, ULONG AllocationType, ULONG Win32Protect, PUNICODE_STRING FullDllName);
 			NTSTATUS __fastcall fLdrpCompleteMapModule(PLDRP_LOAD_CONTEXT LoadContext, PIMAGE_NT_HEADERS OutHeaders, NTSTATUS Status);
 			NTSTATUS __fastcall fLdrpRelocateImage(PIMAGE_DOS_HEADER DllBase, SIZE_T Size, PIMAGE_NT_HEADERS OutHeaders, PUNICODE_STRING FullDllName);
-			//NTSTATUS __fastcall fLdrpProtectAndRelocateImage(PIMAGE_DOS_HEADER DllBase);
 			NTSTATUS __fastcall fLdrpProtectAndRelocateImage(PIMAGE_DOS_HEADER DllBase, SIZE_T Size, PIMAGE_NT_HEADERS OutHeader);
 			NTSTATUS __fastcall	fLdrpSetProtection(PIMAGE_DOS_HEADER DllBase, BOOLEAN Unknown);
 			NTSTATUS __fastcall fLdrRelocateImageWithBias(PIMAGE_DOS_HEADER DllBase, SIZE_T Size, PIMAGE_NT_HEADERS OutHeader);
-			PIMAGE_NT_HEADERS __fastcall fLdrProcessRelocationBlockLongLong(USHORT Machine, ULONG64 Signature, ULONG64 Unknown, PIMAGE_NT_HEADERS64 NtHeader, ULONG64 Unknown3);
+			PIMAGE_NT_HEADERS __fastcall fLdrProcessRelocationBlockLongLong(USHORT Machine, ULONG64 Signature, ULONG64 Unknown, PIMAGE_NT_HEADERS64 NtHeader, ULONG64 Unknown2);
 
 			NTSTATUS __fastcall fLdrpProcessMappedModule(PLDR_DATA_TABLE_ENTRY DllEntry, UINT_PTR Flags, ULONG One);
 			NTSTATUS __fastcall fLdrpCorProcessImports(PLDR_DATA_TABLE_ENTRY DllEntry);
-			NTSTATUS* __fastcall fLdrpMapAndSnapDependency(PLDRP_LOAD_CONTEXT LoadContext);
+			NTSTATUS __fastcall fLdrpMapAndSnapDependency(PLDRP_LOAD_CONTEXT LoadContext);
 			NTSTATUS __fastcall fLdrpPrepareImportAddressTableForSnap(LDRP_LOAD_CONTEXT* LoadContext);
 
 
 			NTSTATUS __fastcall fLdrpPrepareModuleForExecution(PLDR_DATA_TABLE_ENTRY LdrEntry, NTSTATUS* pStatus);
+			NTSTATUS __fastcall fLdrpInitializeGraphRecurse(LDR_DDAG_NODE* DdagNode, NTSTATUS* pStatus, char* Unknown);
+			NTSTATUS __fastcall fLdrpInitializeNode(_LDR_DDAG_NODE* DdagNode);
+			BOOLEAN __fastcall fLdrpCallInitRoutine(BOOL(__fastcall* DllMain)(HINSTANCE hInstDll, DWORD fdwReason, LPVOID lpvReserved), PIMAGE_DOS_HEADER DllBase, unsigned int One, LPVOID ContextRecord);
 
 			NTSTATUS __fastcall fBasepLoadLibraryAsDataFileInternal(PUNICODE_STRING DllName, PWSTR Path, PWSTR Unknown, DWORD dwFlags, HMODULE* pBaseOfLoadedModule);
 		public:
@@ -144,8 +148,6 @@ namespace WID
 
 
 			HMODULE DllHandle;
-			//TCHAR* FullPath;
-			//TCHAR* FilePart;
 		};
 	}
 }

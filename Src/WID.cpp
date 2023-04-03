@@ -24,6 +24,10 @@ NTSTATUS WID::Init()
 		(GetModuleInformation(GetCurrentProcess(), NtdllModule,			&NtdllModuleInfo,		sizeof(MODULEINFO)),	assert(NtdllModuleInfo.lpBaseOfDll));
 
 		// KERNEL32
+		// Variables
+		(KernelBaseGlobalData					= (ULONG*)								((PCHAR)Kernel32Module + 0x34DE80)							,assert(KernelBaseGlobalData));
+
+		// Exported functions
 		(Basep8BitStringToDynamicUnicodeString	= (tBasep8BitStringToDynamicUnicodeString)GetProcAddress(Kernel32Module, "Basep8BitStringToDynamicUnicodeString")	,assert(Basep8BitStringToDynamicUnicodeString));
 		(BaseSetLastNTError						= (tBaseSetLastNTError)GetProcAddress(Kernel32Module, "BaseSetLastNTError")											,assert(BaseSetLastNTError));
 
@@ -59,7 +63,7 @@ NTSTATUS WID::Init()
 		(LdrpRedirectionCalloutFunc				= (tLdrpRedirectionCalloutFunc)			((PCHAR)NtdllModule + 0x184228)								,assert(LdrpRedirectionCalloutFunc));
 		(qword_1993A8							= (ULONG64**)							((PCHAR)NtdllModule + 0x1993A8)								,assert(qword_1993A8));
 		(NtdllBaseTag							= (LONG*)								((PCHAR)NtdllModule + 0x1843F0)								,assert(NtdllBaseTag));
-		(xmmword_199520							= (UINT_PTR**)							((PCHAR)NtdllModule + 0x199520)								,assert(xmmword_199520));
+		(stru_199520							= (FUNCTION_TABLE_DATA*)				((PCHAR)NtdllModule + 0x199520)								,assert(stru_199520));
 		(qword_199530							= (UINT_PTR*)							((PCHAR)NtdllModule + 0x199530)								,assert(qword_199530));
 		(LdrpNtDllDataTableEntry				= (LDR_DATA_TABLE_ENTRY**)				((PCHAR)NtdllModule + 0x184370)								,assert(LdrpNtDllDataTableEntry));
 		(qword_1993B8							= (UINT_PTR*)							((PCHAR)NtdllModule + 0x1993B8)								,assert(qword_1993B8));
