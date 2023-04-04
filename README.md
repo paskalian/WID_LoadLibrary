@@ -584,7 +584,7 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpLoadDllInternal(PUNICODE_STRING FullPath, 
     return *pStatus;
 }
 ```
-The main course of action of this function is to check whether the dll was already loaded and waiting to be executed, or is going to be patched, or a new dll is going to be loaded, if it's a new dll (which is our case) it first goes by LdrpProcessWork to start the mapping process, then after that call succeeds goes on by LdrpPrepareModuleForExecution to execute the dll.
+The main course of action of this function is to check whether the dll was already loaded and waiting to be executed, or is going to be patched, or a new dll is going to be loaded, if it's a new dll (which is our case) it first goes by LdrpProcessWork to start the mapping process, then after that call succeeds goes on by LdrpPrepareModuleForExecution to execute the mapped dll.
 <br>
 ## LdrpProcessWork
 ```cpp
