@@ -19,9 +19,9 @@ The depth level (it's what I say) of the functions, as the level get higher, the
 <hr>
 
 # What is LoadLibrary?
-LoadLibrary is a Windows API function used for loading modules into programs.
+LoadLibrary is an easy to use Windows API function for loading Dynamic Link Libraries (DLLs) into programs.
 
-The usage is pretty simple, you include Windows.h into your project, then you can use it.
+To be able to use it you must first include <Windows.h> into your source file.
 
 There are 4 widely used LoadLibrary functions
 - [LoadLibraryA](https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-loadlibrarya "MSDN Reference")
