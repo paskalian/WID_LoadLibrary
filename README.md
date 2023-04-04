@@ -15,8 +15,6 @@ The depth level (it's what I say) of the functions, as the level get higher, the
 <br><br><br>
 <a href="https://discord.gg/9qe38utdBJ" target="blank"><img align="center" src="https://raw.githubusercontent.com/rahuldkjain/github-profile-readme-generator/master/src/images/icons/Social/discord.svg" alt="9qe38utdBJ" height="30" width="30" /></a> [Discord](https://discord.gg/9qe38utdBJ "For other questions etc.")
 
-
-
 <hr>
 
 # What is LoadLibrary?
@@ -43,3 +41,8 @@ Here is a basic diagram to show what functions are called in order to load a mod
 </p>
 
 Now that it may look confusing, but I will try to explain each function one by one.
+
+<hr>
+
+## LoadLibrary
+Not a function by itself but a macro instead, resolved into one of the according functions **LoadLibraryA** or **LoadLibraryW** depending on your character set being **Unicode** or **Multi-byte** respectively.
