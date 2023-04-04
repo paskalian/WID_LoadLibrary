@@ -10,13 +10,13 @@ NTSTATUS WID::Init()
 	if (!bInitialized)
 	{
 		// MODULE INITIALIZATION
-		HMODULE Kernel32Module		= GetModuleHandle("KERNEL32.DLL");
+		HMODULE Kernel32Module		= GetModuleHandle(TEXT("KERNEL32.DLL"));
 		assert(Kernel32Module);
 
-		HMODULE KernelBaseModule	= GetModuleHandle("KERNELBASE.DLL");
+		HMODULE KernelBaseModule	= GetModuleHandle(TEXT("KERNELBASE.DLL"));
 		assert(KernelBaseModule);
 
-		HMODULE NtdllModule			= GetModuleHandle("NTDLL.DLL");
+		HMODULE NtdllModule			= GetModuleHandle(TEXT("NTDLL.DLL"));
 		assert(NtdllModule);
 
 		(GetModuleInformation(GetCurrentProcess(), Kernel32Module,		&Kernel32ModuleInfo,	sizeof(MODULEINFO)),	assert(Kernel32ModuleInfo.lpBaseOfDll));
@@ -109,7 +109,7 @@ NTSTATUS WID::Init()
 		(LdrpDereferenceModule						= (tLdrpDereferenceModule)					Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_DEREFERENCE_MODULE_PATTERN,			strlen(LDRP_DEREFERENCE_MODULE_PATTERN))			,assert(LdrpDereferenceModule));
 		(LdrpLogDllState							= (tLdrpLogDllState)						Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_LOG_DLLSTATE_PATTERN,					strlen(LDRP_LOG_DLLSTATE_PATTERN))					,assert(LdrpLogDllState));
 		(LdrpPreprocessDllName						= (tLdrpPreprocessDllName)					Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_PREPROCESS_DLLNAME_PATTERN,			strlen(LDRP_PREPROCESS_DLLNAME_PATTERN))			,assert(LdrpPreprocessDllName));
-		(LdrpFastpthReloadedDll						= (tLdrpFastpthReloadedDll)					Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_FASTPTH_RELOADED_DLL_PATTERN,			strlen(LDRP_FASTPTH_RELOADED_DLL_PATTERN))			,assert(LdrpFastpthReloadedDll));
+		(LdrpFindLoadedDllByName					= (tLdrpFindLoadedDllByName)				Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_FIND_LOADEDDLLBYNAME_PATTERN,			strlen(LDRP_FIND_LOADEDDLLBYNAME_PATTERN))			,assert(LdrpFindLoadedDllByName));
 		(LdrpDrainWorkQueue							= (tLdrpDrainWorkQueue)						Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_DRAIN_WORKQUEUE_PATTERN,				strlen(LDRP_DRAIN_WORKQUEUE_PATTERN))				,assert(LdrpDrainWorkQueue));
 		(LdrpFindLoadedDllByHandle					= (tLdrpFindLoadedDllByHandle)				Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_FIND_LOADEDDLL_BYHANDLE_PATTERN,		strlen(LDRP_FIND_LOADEDDLL_BYHANDLE_PATTERN))		,assert(LdrpFindLoadedDllByHandle));
 		(LdrpDropLastInProgressCount				= (tLdrpDropLastInProgressCount)			Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_DROP_LASTINPROGRESS_COUNT_PATTERN,	strlen(LDRP_DROP_LASTINPROGRESS_COUNT_PATTERN))		,assert(LdrpDropLastInProgressCount));

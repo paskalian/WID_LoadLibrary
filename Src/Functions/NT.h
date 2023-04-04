@@ -88,6 +88,8 @@ extern tLdrpRedirectionCalloutFunc LdrpRedirectionCalloutFunc;
 
 PEB* NtCurrentPeb();
 VOID __fastcall NtdllpFreeStringRoutine(PWCH Buffer); // CHECKED.
+NTSTATUS __fastcall LdrpFastpthReloadedDll(PUNICODE_STRING FullPath, ULONG Flags, PLDR_DATA_TABLE_ENTRY LdrEntry, LDR_DATA_TABLE_ENTRY** DllEntry);
+NTSTATUS __fastcall LdrpIncrementModuleLoadCount(LDR_DATA_TABLE_ENTRY* LdrEntry);
 VOID __fastcall RtlFreeUnicodeString(PUNICODE_STRING UnicodeString); // CHECKED.
 VOID __fastcall LdrpFreeUnicodeString(PUNICODE_STRING String);
 ULONG __fastcall RtlGetCurrentServiceSessionId(VOID); // CHECKED ?
@@ -217,9 +219,9 @@ extern	tLdrpLogDllState LdrpLogDllState;
 typedef NTSTATUS(__fastcall* tLdrpPreprocessDllName)(PUNICODE_STRING DllName, PUNICODE_STRING ResName, PULONG pZero, PULONG pFlags);
 extern	tLdrpPreprocessDllName LdrpPreprocessDllName;
 
-#define LDRP_FASTPTH_RELOADED_DLL_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x74\x24\x18\x57\x48\x83\xEC\x30\x83\x64\x24\x48\x00"
-typedef NTSTATUS(__fastcall* tLdrpFastpthReloadedDll)(PUNICODE_STRING FullPath, ULONG Flags, PLDR_DATA_TABLE_ENTRY LdrEntry2, PLDR_DATA_TABLE_ENTRY* DllEntry);
-extern	tLdrpFastpthReloadedDll LdrpFastpthReloadedDll;
+#define LDRP_FIND_LOADEDDLLBYNAME_PATTERN "\x48\x8B\xC4\x53\x55\x41\x57\x48\x83\xEC\x50"
+typedef NTSTATUS(__fastcall* tLdrpFindLoadedDllByName)(PUNICODE_STRING FullPath, PUNICODE_STRING DllName, USHORT Flags, LDR_DATA_TABLE_ENTRY** DllEntry, LDR_DDAG_STATE* ReturnStatus);
+extern tLdrpFindLoadedDllByName LdrpFindLoadedDllByName;
 
 #define LDRP_DRAIN_WORKQUEUE_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x6C\x24\x10\x48\x89\x74\x24\x18\x57\x41\x54\x41\x56\x48\x83\xEC\x20\x4C\x8B\x35\x35\xA3\x15\x00"
 typedef TEB* (__fastcall* tLdrpDrainWorkQueue)(DRAIN_TASK DrainTask);

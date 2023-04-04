@@ -57,6 +57,100 @@ VOID __fastcall NtdllpFreeStringRoutine(PWCH Buffer) // CHECKED.
 	RtlFreeHeap(NtCurrentPeb()->ProcessHeap, 0, Buffer);
 }
 
+NTSTATUS __fastcall LdrpFastpthReloadedDll(PUNICODE_STRING FullPath, ULONG Flags, PLDR_DATA_TABLE_ENTRY LdrEntry, LDR_DATA_TABLE_ENTRY** DllEntry)
+{
+    NTSTATUS Status;
+
+    PUNICODE_STRING PathUsed;
+    LDR_DATA_TABLE_ENTRY* pDllEntry;
+    LDR_DDAG_STATE DdagState;
+
+    DdagState = LdrModulesPlaceHolder;
+    Status = STATUS_NOT_FOUND;
+
+    if (Flags & LOAD_LIBRARY_AS_IMAGE_RESOURCE)
+    {
+        PathUsed = FullPath;
+        FullPath = 0;
+    }
+    else
+    {
+        // If an absolute path was sent from LoadLibrary it will have 0x200 (LOAD_LIBRARY_SEARCH_APPLICATION_DIR), but the if is checking for not so it can be ignored.
+        if ((Flags & LOAD_LIBRARY_SEARCH_APPLICATION_DIR) == 0)
+            return Status;
+
+        PathUsed = nullptr;
+    }
+
+    Status = LdrpFindLoadedDllByName(PathUsed, FullPath, Flags, DllEntry, &DdagState);
+    if (NT_SUCCESS(Status))
+    {
+        pDllEntry = *DllEntry;
+        if (pDllEntry->LoadReason == LoadReasonPatchImage)
+        {
+            Status = STATUS_IMAGE_LOADED_AS_PATCH_IMAGE;
+            LdrpLogEtwHotPatchStatus(&(*LdrpImageEntry)->BaseDllName, pDllEntry, 0, STATUS_IMAGE_LOADED_AS_PATCH_IMAGE, 2u);
+        }
+        else
+        {
+            Status = STATUS_NOT_FOUND;
+            if (DdagState == LdrModulesReadyToRun)
+            {
+                Status = LdrpIncrementModuleLoadCount(pDllEntry);
+                if (NT_SUCCESS(Status))
+                {
+                    Status = LdrpBuildForwarderLink(LdrEntry, pDllEntry);
+                    // This is where we most likely end up on a normal call from LoadLibraryExW
+                    if (NT_SUCCESS(Status))
+                        return Status;
+
+                    BOOLEAN IsWorkerThread = (!(NtCurrentTeb()->SameTebFlags & LoadOwner));
+                    if (IsWorkerThread)
+                        LdrpDrainWorkQueue(WaitLoadComplete);
+
+                    LdrpDecrementModuleLoadCountEx(pDllEntry, 0);
+                    if (IsWorkerThread)
+                        LdrpDropLastInProgressCount();
+                }
+            }
+        }
+
+        LdrpDereferenceModule(*DllEntry);
+        *DllEntry = nullptr;
+    }
+
+    return Status;
+}
+
+NTSTATUS __fastcall LdrpIncrementModuleLoadCount(LDR_DATA_TABLE_ENTRY* LdrEntry)
+{
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    RtlAcquireSRWLockExclusive(LdrpModuleDatatableLock);
+
+    LDR_DDAG_NODE* DdagNode = LdrEntry->DdagNode;
+    ULONG LoadCount = DdagNode->LoadCount;
+    if (LoadCount != -1)
+    {
+        if (LoadCount)
+        {
+            DdagNode->LoadCount = LoadCount + 1;
+        }
+        else if (NtCurrentTeb()->SameTebFlags & LoadOwner)
+        {
+            ++DdagNode->LoadWhileUnloadingCount;
+        }
+        else
+        {
+            Status = STATUS_DLL_NOT_FOUND;
+        }
+    }
+
+    RtlReleaseSRWLockExclusive(LdrpModuleDatatableLock);
+
+    return Status;
+}
+
 VOID __fastcall RtlFreeUnicodeString(PUNICODE_STRING UnicodeString) // CHECKED.
 {
     WCHAR* Buffer;
@@ -722,10 +816,9 @@ tLdrpInitializeDllPath		                        LdrpInitializeDllPath		         
 tLdrpDereferenceModule		                        LdrpDereferenceModule		            = nullptr;
 tLdrpLogDllState			                        LdrpLogDllState				            = nullptr;
 tLdrpPreprocessDllName		                        LdrpPreprocessDllName		            = nullptr;
-tLdrpFastpthReloadedDll		                        LdrpFastpthReloadedDll		            = nullptr;
+tLdrpFindLoadedDllByName                            LdrpFindLoadedDllByName                 = nullptr;
 tLdrpDrainWorkQueue			                        LdrpDrainWorkQueue			            = nullptr;
 tLdrpFindLoadedDllByHandle	                        LdrpFindLoadedDllByHandle	            = nullptr;
-
 tLdrpDropLastInProgressCount                        LdrpDropLastInProgressCount             = nullptr;
 tLdrpQueryCurrentPatch                              LdrpQueryCurrentPatch                   = nullptr;
 tLdrpUndoPatchImage                                 LdrpUndoPatchImage                      = nullptr;

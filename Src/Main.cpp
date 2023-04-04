@@ -5,7 +5,7 @@
 int main()
 {
 	{
-		WID::Loader::LOADLIBRARY Test("PATH_TO_DLL.dll");
+		WID::Loader::LOADLIBRARY Test(TEXT("PATH_TO_DLL.dll"));
 
 		getchar();
 	}
