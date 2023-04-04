@@ -8,8 +8,6 @@
 The purpose of these series are **only** to understand Windows better, there is a lot to discover.
 
 # Information
-There will be some terms I use you may not understand, so I wanted to explain them in here first.
-
 ### Functions
 All the function implementations given below are my own, they are not guaranteed to represent the exact functionality.
 
