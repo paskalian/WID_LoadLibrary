@@ -35,9 +35,10 @@ Even if they look like seperate, they all end up in **LoadLibraryExW** finally, 
 <hr>
 
 Here is a basic diagram to show what functions are called in order to load a module into a process (maybe not exact represantation).<br>
-( ! ) The path was given **absolute** and **no flags** were given.<br>
 
 <p align="center">
+<b>The path was given absolute and no flags were given</b>
+
 <img src="https://github.com/paskalian/WID_LoadLibrary/blob/main/Images/Diagram.svg" alt="Diagram"/>
 </p>
 
