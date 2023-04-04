@@ -7,14 +7,25 @@
 
 The purpose of these series are **only** to understand Windows better, there is a lot to discover.
 
-# Information
+# Information <a href="https://discord.gg/9qe38utdBJ" target="blank"><img align="center" src="https://raw.githubusercontent.com/rahuldkjain/github-profile-readme-generator/master/src/images/icons/Social/discord.svg" alt="9qe38utdBJ" height="40" width="40"></a>
 ### Functions
 All the function implementations given below are my own, they are not guaranteed to represent the exact functionality.
 
 ### Levels
 The depth level (it's what I say) of the functions, as the level get higher, the functions get less documented and harder to understand.
-<br><br><br>
-<a href="https://discord.gg/9qe38utdBJ" target="blank"><img align="center" src="https://raw.githubusercontent.com/rahuldkjain/github-profile-readme-generator/master/src/images/icons/Social/discord.svg" alt="9qe38utdBJ" height="30" width="30" /></a> [Discord](https://discord.gg/9qe38utdBJ "For other questions etc.")
+
+# Usage
+Pretty easy, you first include "WID.h" into your source file. Then you create a LOADLIBRARY instance with a path given, and that's it. Now you can almost see the entire loading process!
+```cpp
+#include "WID.h"
+
+using namespace WID::Loader;
+
+int main()
+{
+    LOADLIBRARY LoadDll(TEXT("PATH_TO_DLL.dll"));
+}
+```
 
 <hr>
 
@@ -41,10 +52,7 @@ Here is a basic diagram to show what functions are called in order to load a mod
 <img src="https://github.com/paskalian/WID_LoadLibrary/blob/main/Images/Diagram.svg" alt="Diagram"/>
 </p>
 
-Now that it may look confusing, but I will try to explain each function one by one.
-
-<hr>
-
+# Basic Explanations
 ## LoadLibrary
 ```cpp
 #ifdef UNICODE
