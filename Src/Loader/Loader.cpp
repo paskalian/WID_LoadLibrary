@@ -1495,9 +1495,135 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpMapDllFullPath(PLDRP_LOAD_CONTEXT LoadCont
 
 NTSTATUS __fastcall LOADLIBRARY::fLdrpMapDllSearchPath(PLDRP_LOAD_CONTEXT LoadContext)
 {
-	// TO DO.
+	NTSTATUS Status;
 
-	return STATUS_SUCCESS;
+	UINT_PTR DependentLoadFlags;
+	LDR_UNKSTRUCT* UnkStruct;
+	ULONG Flags;
+		
+	LDR_UNKSTRUCT DllPath;
+
+	LDRP_FILENAME_BUFFER DllNameResolved;
+	DllNameResolved.pFileName.Buffer = DllNameResolved.FileName;
+	DllNameResolved.pFileName.Length = 0;
+	DllNameResolved.pFileName.MaximumLength = MAX_PATH - 4;
+	DllNameResolved.FileName[0] = 0;
+
+	LDR_UNKSTRUCT3 UnkStruct3;
+	memset(&UnkStruct3, 0, sizeof(UnkStruct3));
+	UNICODE_STRING ReturnPath = {};
+
+	LDR_DATA_TABLE_ENTRY* DllEntry = (LDR_DATA_TABLE_ENTRY*)LoadContext->WorkQueueListEntry.Flink;
+	LDR_DATA_TABLE_ENTRY* LdrEntry = LoadContext->Entry;
+	LDR_DATA_TABLE_ENTRY* LdrEntry2 = nullptr;
+	do
+	{
+		if (LdrEntry && (DependentLoadFlags = LdrEntry->DependentLoadFlags, (((*LdrpPolicyBits & 4) != 0 ? 0x7F00 : 0x7B00) & (ULONG)DependentLoadFlags) != 0))
+		{
+			LdrpInitializeDllPath(LdrEntry->FullDllName.Buffer, (PWSTR)(DependentLoadFlags & ((-(__int64)((*LdrpPolicyBits & 4) != 0) & 0x400) + 0x7B00) | 1), &DllPath);
+			UnkStruct = &DllPath;
+		}
+		else
+		{
+			LdrpInitializeDllPath(nullptr, nullptr, &DllPath);
+			UnkStruct = LoadContext->UnkStruct;
+		}
+
+		BOOL SomeCheck;
+		BOOLEAN JumpOut = FALSE;
+		while (TRUE)
+		{
+			UNICODE_STRING BaseDllName;
+
+			BOOL a8 = FALSE;
+			Flags = LoadContext->Flags >> 3;
+			Flags = (LoadContext->Flags & 8) != 0;
+			Status = LdrpSearchPath(LoadContext, UnkStruct, Flags, &ReturnPath, &DllNameResolved, &BaseDllName, &UnkStruct3.String, &a8, &UnkStruct3);
+			if (a8)
+				DllEntry->Flags |= PackagedBinary;
+
+			if (Status == STATUS_DLL_NOT_FOUND)
+				break;
+
+			if (!NT_SUCCESS(Status))
+			{
+				JumpOut = TRUE;
+				break;
+			}
+
+		CHECK_LOADCONTEXT:
+			SomeCheck = TRUE;
+			if (!LoadContext->UnknownPtr)
+			{
+				Status = LdrpAppCompatRedirect(LoadContext, &UnkStruct3.String, &BaseDllName, &DllNameResolved, Status);
+				if (!NT_SUCCESS(Status))
+				{
+					JumpOut = TRUE;
+					break;
+				}
+
+				if ((LoadContext->Flags & 0x10000) != 0)
+					UnkStruct3.Flags |= PackagedBinary;
+
+				ULONG DllNameHash = LdrpHashUnicodeString(&BaseDllName);
+				DllEntry->BaseNameHashValue = DllNameHash;
+				Status = LdrpFindExistingModule(&BaseDllName, &UnkStruct3.String, LoadContext->Flags, DllNameHash, &LdrEntry2);
+				if (Status != STATUS_DLL_NOT_FOUND)
+				{
+					JumpOut = TRUE;
+					break;
+				}
+			}
+			LdrpFreeUnicodeString(&DllEntry->FullDllName);
+			DllEntry->FullDllName = UnkStruct3.String;
+			DllEntry->BaseDllName = BaseDllName;
+			UnkStruct3.String = {};
+			Status = fLdrpMapDllNtFileName(LoadContext, &DllNameResolved);
+
+			if (Status != STATUS_IMAGE_MACHINE_TYPE_MISMATCH)
+			{
+				JumpOut = TRUE;
+				break;
+			}
+
+			if (DllNameResolved.FileName != DllNameResolved.pFileName.Buffer)
+				NtdllpFreeStringRoutine(DllNameResolved.pFileName.Buffer);
+
+			DllNameResolved.pFileName.Length = 0;
+			DllNameResolved.pFileName.MaximumLength = MAX_PATH - 4;
+			DllNameResolved.pFileName.Buffer = DllNameResolved.FileName;
+			DllNameResolved.FileName[0] = 0;
+		}
+
+		if (JumpOut)
+			break;
+
+		if (!SomeCheck)
+			goto CHECK_LOADCONTEXT;
+
+		Status = STATUS_INVALID_IMAGE_FORMAT;
+	} while (FALSE);
+
+	if (LdrEntry2)
+	{
+		LdrpLoadContextReplaceModule(LoadContext, LdrEntry2);
+	}
+	else if (LdrpIsSecurityEtwLoggingEnabled())
+	{
+		LdrpLogEtwDllSearchResults(UnkStruct3.Flags, LoadContext);
+	}
+	if (DllNameResolved.FileName != DllNameResolved.pFileName.Buffer)
+		NtdllpFreeStringRoutine(DllNameResolved.pFileName.Buffer);
+
+	DllNameResolved.pFileName.Length = 0;
+	DllNameResolved.pFileName.MaximumLength = MAX_PATH - 4;
+	DllNameResolved.pFileName.Buffer = DllNameResolved.FileName;
+	DllNameResolved.FileName[0] = 0;
+	LdrpFreeUnicodeString(&UnkStruct3.String);
+	if (DllPath.IsInitedMaybe)
+		RtlReleasePath(DllPath.pInitNameMaybe);
+
+	return Status;
 }
 
 NTSTATUS __fastcall LOADLIBRARY::fLdrpMapDllNtFileName(PLDRP_LOAD_CONTEXT LoadContext, LDRP_FILENAME_BUFFER* FileNameBuffer) // CHECKED.

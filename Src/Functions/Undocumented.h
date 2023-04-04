@@ -857,9 +857,8 @@ typedef struct _TEB
 
 struct LDR_UNKSTRUCT
 {
-    PWCHAR pInitNameMaybe;
-    __int64 field_8;
-    __int64 field_10;
+    PWSTR pInitNameMaybe;
+    __declspec(align(16)) PWSTR Buffer;
     int Flags;
     PWSTR pDllName;
     char Pad1[84];
@@ -871,6 +870,12 @@ struct LDR_UNKSTRUCT2
 {
     PUNICODE_STRING Name;
     UINT64 Status;
+};
+
+struct LDR_UNKSTRUCT3
+{
+    ULONG Flags;
+    UNICODE_STRING String;
 };
 
 typedef struct _LDRP_LOAD_CONTEXT

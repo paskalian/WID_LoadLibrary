@@ -313,6 +313,18 @@ extern tLdrpFindExistingModule LdrpFindExistingModule;
 typedef NTSTATUS(__fastcall* tLdrpLoadContextReplaceModule)(PLDRP_LOAD_CONTEXT LoadContext, PLDR_DATA_TABLE_ENTRY LoadedDll);
 extern tLdrpLoadContextReplaceModule LdrpLoadContextReplaceModule;
 
+#define LDRP_SEARCHPATH_PATTERN "\x48\x89\x5C\x24\x18\x55\x56\x57\x41\x54\x41\x55\x41\x56\x41\x57\x48\x8D\x6C\x24\xF9\x48\x81\xEC\xD0\x00\x00\x00"
+typedef NTSTATUS(__fastcall* tLdrpSearchPath)(LDRP_LOAD_CONTEXT* LoadContext, LDR_UNKSTRUCT* UnkStruct, ULONG Flags, PUNICODE_STRING ReturnPath, LDRP_FILENAME_BUFFER* FileName, PUNICODE_STRING BaseDllName, PUNICODE_STRING UnkStruct3_String, BOOL* a8, LDR_UNKSTRUCT3* UnkStruct3);
+extern tLdrpSearchPath LdrpSearchPath;
+
+#define LDRP_ISSECURITYETW_LOGG_ENABLED_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x74\x24\x10\x57\x48\x83\xEC\x20\xE8\x04\xA2\x02\x00"
+typedef BOOLEAN(__fastcall* tLdrpIsSecurityEtwLoggingEnabled)();
+extern tLdrpIsSecurityEtwLoggingEnabled LdrpIsSecurityEtwLoggingEnabled;
+
+#define LDRP_LOGETW_DLL_SEARCHRESULTS_PATTERN "\x48\x89\x5C\x24\x08\x55\x56\x57\x41\x54\x41\x55\x41\x56\x41\x57\x48\x8B\xEC\x48\x83\xEC\x60\x44\x8B\xF9"
+typedef VOID(__fastcall* tLdrpLogEtwDllSearchResults)(ULONG Flags, LDRP_LOAD_CONTEXT* LoadContext);
+extern tLdrpLogEtwDllSearchResults LdrpLogEtwDllSearchResults;
+
 #define LDRP_CHECKFORRETRY_LOADING_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x6C\x24\x10\x48\x89\x74\x24\x18\x57\x41\x54\x41\x55\x41\x56\x41\x57\x48\x83\xEC\x20\x33\xDB\x44\x8A\xFA"
 typedef BOOLEAN(__fastcall* tLdrpCheckForRetryLoading)(PLDRP_LOAD_CONTEXT LoadContext, BOOLEAN Unknown);
 extern tLdrpCheckForRetryLoading LdrpCheckForRetryLoading;

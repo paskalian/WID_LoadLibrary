@@ -747,6 +747,9 @@ tLdrpAppCompatRedirect                              LdrpAppCompatRedirect       
 tLdrpHashUnicodeString                              LdrpHashUnicodeString                   = nullptr;
 tLdrpFindExistingModule                             LdrpFindExistingModule                  = nullptr;
 tLdrpLoadContextReplaceModule                       LdrpLoadContextReplaceModule            = nullptr;
+tLdrpSearchPath                                     LdrpSearchPath                          = nullptr;
+tLdrpIsSecurityEtwLoggingEnabled                    LdrpIsSecurityEtwLoggingEnabled         = nullptr;
+tLdrpLogEtwDllSearchResults                         LdrpLogEtwDllSearchResults              = nullptr;
 tLdrpCheckForRetryLoading                           LdrpCheckForRetryLoading                = nullptr;
 tLdrpLogEtwEvent                                    LdrpLogEtwEvent                         = nullptr;
 tLdrpCheckComponentOnDemandEtwEvent                 LdrpCheckComponentOnDemandEtwEvent      = nullptr;
