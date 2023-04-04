@@ -37,8 +37,6 @@ Even if they look like seperate, they all end up in **LoadLibraryExW** finally, 
 Here is a basic diagram to show what functions are called in order to load a module into a process (maybe not exact represantation).<br>
 ( ! ) The path was given **absolute** and **no flags** were given.<br>
 
-<br>
-
 ![WID DIAGRAM](Images/Diagram.svg "WID_DIAGRAM")
 
 Now that it may look confusing, but I will try to explain each function one by one.
