@@ -723,3 +723,134 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpMapDllFullPath(PLDRP_LOAD_CONTEXT LoadCont
 }
 ```
 Sets up a LDRP_FILENAME_BUFFER structure, basically representing each portion of a path (base part, absolute part, etc.), hashes the **base** dll name and checks if it was already loaded, if it's not (our case) it goes on by calling LdrpMapDllNtFileName.
+<br>
+## LdrpMapDllNtFileName
+```cpp
+NTSTATUS __fastcall LOADLIBRARY::fLdrpMapDllNtFileName(PLDRP_LOAD_CONTEXT LoadContext, LDRP_FILENAME_BUFFER* FileNameBuffer) // CHECKED.
+{
+    NTSTATUS Status;
+
+    //LDR_DATA_TABLE_ENTRY* DllEntry = (LDR_DATA_TABLE_ENTRY*)LoadContext->WorkQueueListEntry.Flink;
+    LDR_DATA_TABLE_ENTRY* DllEntry = CONTAINING_RECORD(LoadContext->WorkQueueListEntry.Flink, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+    INT64 UnknownPtr = LoadContext->UnknownPtr;
+    LONG Unknown = 0;
+    if (LdrpCheckForRetryLoading(LoadContext, 0))
+        return STATUS_RETRY;
+
+    PUNICODE_STRING FullDllName = &DllEntry->FullDllName;
+    WID_HIDDEN( LdrpLogDllState((ULONGLONG)DllEntry->DllBase, &DllEntry->FullDllName, 0x14A5); )
+    //OBJ_CASE_INSENSITIVE 
+    ULONG ObjAttributes = OBJ_CASE_INSENSITIVE;
+    if (!*LdrpUseImpersonatedDeviceMap)
+        ObjAttributes = (OBJ_IGNORE_IMPERSONATED_DEVICEMAP | OBJ_CASE_INSENSITIVE);
+
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    ObjectAttributes.Length = 0x30;
+    ObjectAttributes.RootDirectory = 0;
+    ObjectAttributes.Attributes = ObjAttributes;
+    ObjectAttributes.ObjectName = &FileNameBuffer->pFileName;
+    ObjectAttributes.SecurityDescriptor = 0;
+    ObjectAttributes.SecurityQualityOfService = 0;
+
+    PCHAR NtPathStuff = (PCHAR)&kUserSharedData->UserModeGlobalLogger[2];
+    PCHAR Unknown2 = 0;
+    if (RtlGetCurrentServiceSessionId())
+        Unknown2 = (PCHAR)&NtCurrentPeb()->SharedData->NtSystemRoot[253];
+    else
+        Unknown2 = (PCHAR)&kUserSharedData->UserModeGlobalLogger[2];
+
+    PCHAR NtPathStuff2 = (PCHAR)&kUserSharedData->UserModeGlobalLogger[2] + 1;
+    if (*Unknown2 && (NtCurrentPeb()->TracingFlags & LibLoaderTracingEnabled))
+    {
+        //: (char*)0x7FFE0385;
+        PCHAR NtPathStuff3 = RtlGetCurrentServiceSessionId() ? (PCHAR)&NtCurrentPeb()->SharedData->NtSystemRoot[253] + 1 : (PCHAR)&kUserSharedData->UserModeGlobalLogger[2] + 1;
+            
+        // 0x20 is SPACE char
+        if ((*NtPathStuff3 & ' '))
+            LdrpLogEtwEvent(0x1485, -1, 0xFFu, 0xFFu);
+    }
+
+    // SYSTEM_FLAGS_INFORMATION
+    if ((NtCurrentPeb()->NtGlobalFlag & FLG_ENABLE_KDEBUG_SYMBOL_LOAD))
+    {
+        WID_HIDDEN( ZwSystemDebugControl(); )
+    }
+
+    HANDLE FileHandle;
+    while (TRUE)
+    {    
+        IO_STATUS_BLOCK IoStatusBlock;    
+        Status = NtOpenFile(&FileHandle, SYNCHRONIZE | FILE_TRAVERSE | FILE_LIST_DIRECTORY, &ObjectAttributes, &IoStatusBlock, 5, 0x60);
+        if (NT_SUCCESS(Status))
+            break;
+
+        if (Status == STATUS_OBJECT_NAME_NOT_FOUND || Status == STATUS_OBJECT_PATH_NOT_FOUND)
+            return STATUS_DLL_NOT_FOUND;
+
+        if (Status != STATUS_ACCESS_DENIED || Unknown || !LdrpCheckComponentOnDemandEtwEvent(LoadContext))
+            return Status;
+
+        Unknown = TRUE;
+    }
+
+    ULONG SigningLevel;
+    ULONG AllocationAttributes = 0;
+    if    (*LdrpAuditIntegrityContinuity && (Status = LdrpValidateIntegrityContinuity(LoadContext, FileHandle), !NT_SUCCESS(Status)) && *LdrpEnforceIntegrityContinuity || 
+        (AllocationAttributes = MEM_IMAGE, (LoadContext->Flags & MEM_IMAGE)) && (NtCurrentPeb()->BitField & IsPackagedProcess) == 0 &&
+      // (Status = LdrpSetModuleSigningLevel(FileHandle, (PLDR_DATA_TABLE_ENTRY)LoadContext->WorkQueueListEntry.Flink, &SigningLevel, 8), !NT_SUCCESS(Status)))
+        (Status = LdrpSetModuleSigningLevel(FileHandle, CONTAINING_RECORD(LoadContext->WorkQueueListEntry.Flink, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks), &SigningLevel, 8), !NT_SUCCESS(Status)))
+    {
+        NtClose(FileHandle);
+        return Status;
+    }
+
+    if (*UseWOW64 && (LoadContext->Flags & 0x800) == 0)
+        AllocationAttributes = MEM_IMAGE | MEM_TOP_DOWN;
+
+    HANDLE SectionHandle;
+    Status = NtCreateSection(&SectionHandle, SECTION_QUERY | SECTION_MAP_READ | SECTION_MAP_EXECUTE, 0, 0, PAGE_EXECUTE, AllocationAttributes, FileHandle);
+    if (!NT_SUCCESS(Status))
+    {
+        if (Status == STATUS_NEEDS_REMEDIATION || (Status + 0x3FFFFB82) <= 1)
+        {
+            Status = LdrAppxHandleIntegrityFailure(Status);
+        }
+        else if (Status != STATUS_NO_MEMORY && Status != STATUS_INSUFFICIENT_RESOURCES && Status != STATUS_COMMITMENT_LIMIT)
+        {
+            LDR_UNKSTRUCT2 NtHardParameters;
+            NtHardParameters.Name = FullDllName;
+            NtHardParameters.Status = Status;
+            // Semi-documented in http://undocumented.ntinternals.net/
+            HARDERROR_RESPONSE Response;
+            if (NT_SUCCESS(NtRaiseHardError(STATUS_INVALID_IMAGE_FORMAT, 2, 1, (INT*)&NtHardParameters, OptionOk, &Response)) && *LdrInitState != 3)
+            {
+                ++(*LdrpFatalHardErrorCount);
+            }
+        }
+        WID_HIDDEN( LdrpLogError(Status, 0x1485u, 0, FullDllName); )
+        NtClose(FileHandle);
+        return Status;
+    }
+    if (RtlGetCurrentServiceSessionId())
+        NtPathStuff = (PCHAR)&NtCurrentPeb()->SharedData->NtSystemRoot[253];
+    if (*NtPathStuff && (NtCurrentPeb()->TracingFlags & LibLoaderTracingEnabled) != 0)
+    {
+        if (RtlGetCurrentServiceSessionId())
+            NtPathStuff2 = (PCHAR)&NtCurrentPeb()->SharedData->NtSystemRoot[253] + 1;
+
+        // 0x20 is SPACE char.
+        if ((*NtPathStuff2 & ' ') != 0)
+            WID_HIDDEN( LdrpLogEtwEvent(0x1486, -1, 0xFFu, 0xFFu); )
+    }
+    if (!*UseWOW64 && (LoadContext->Flags & 0x100) == 0 && (Status = LdrpCodeAuthzCheckDllAllowed(FileNameBuffer, FileHandle), NT_SUCCESS((LONG)(Status + 0x80000000))) && Status != STATUS_NOT_FOUND || (Status = fLdrpMapDllWithSectionHandle(LoadContext, SectionHandle), !UnknownPtr) || !NT_SUCCESS(Status))
+    {
+        NtClose(SectionHandle);
+        NtClose(FileHandle);
+        return Status;
+    }
+    LoadContext->FileHandle = FileHandle;
+    LoadContext->SectionHandle = SectionHandle;
+    return Status;
+}
+```
+Opens the file with NtOpenFile, creates a section using NtCreateSection to be able to map the dll, continues with calling LdrpMapDllWithSectionHandle.
