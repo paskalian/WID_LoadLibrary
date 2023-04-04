@@ -9,7 +9,7 @@ The purpose of these series are **only** to understand Windows better, there is 
 
 # Information <a href="https://discord.gg/9qe38utdBJ" target="blank"><img align="center" src="https://raw.githubusercontent.com/rahuldkjain/github-profile-readme-generator/master/src/images/icons/Social/discord.svg" alt="9qe38utdBJ" height="40" width="40"></a>
 ### Functions
-All the function implementations given below are my own, they are not guaranteed to represent the exact functionality.
+All the function implementations given are my own, they are not guaranteed to represent the exact functionality.
 
 ### Levels
 The depth level (it's what I say) of the functions, as the level get higher, the functions get less documented and harder to understand.
