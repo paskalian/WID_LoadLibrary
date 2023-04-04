@@ -243,8 +243,8 @@ NTSTATUS __fastcall LdrpFindLoadedDllByNameLockHeld(PUNICODE_STRING BaseDllName,
     BOOLEAN DllFound = FALSE;
     for (LIST_ENTRY* HashEntry = pHashIdx->Flink; HashEntry != pHashIdx; HashEntry = HashEntry->Flink)
     {
-        //LDR_DATA_TABLE_ENTRY* DllEntry = (LDR_DATA_TABLE_ENTRY*)&HashEntry[-7];
-        LDR_DATA_TABLE_ENTRY* DllEntry = CONTAINING_RECORD(HashEntry, LDR_DATA_TABLE_ENTRY, HashLinks);
+        LDR_DATA_TABLE_ENTRY* DllEntry = (LDR_DATA_TABLE_ENTRY*)&HashEntry[-7];
+        //LDR_DATA_TABLE_ENTRY* DllEntry = CONTAINING_RECORD(HashEntry, LDR_DATA_TABLE_ENTRY, HashLinks);
 
         //LDR_DATA_TABLE_ENTRY* DllEntry = (PLDR_DATA_TABLE_ENTRY)CONTAINING_RECORD(HashEntry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
         if (BaseNameHashValue == (DllEntry->BaseNameHashValue) && ((Flags & 8) == 0 || (DllEntry->FlagGroup[0] & 1) != 0))

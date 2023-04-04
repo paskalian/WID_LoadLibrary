@@ -2682,10 +2682,10 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpInitializeNode(_LDR_DDAG_NODE* DdagNode)
 	while (Blink != (LDR_DATA_TABLE_ENTRY*)DdagNode)
 	{
 		//if (&Blink[-1].DdagNode != (_LDR_DDAG_NODE**)LdrEntry)
-		if (CONTAINING_RECORD(Blink, LDR_DATA_TABLE_ENTRY, DdagNode) != LdrEntry)
+		if (&Blink[-1].DdagNode != (LDR_DDAG_NODE**)LdrEntry)
 		{
-			//p_ParentDllBase = &Blink[-1].ParentDllBase
-			p_ParentDllBase = (PVOID*)CONTAINING_RECORD(Blink, LDR_DATA_TABLE_ENTRY, ParentDllBase);
+			p_ParentDllBase = &Blink[-1].ParentDllBase;
+			//p_ParentDllBase = (PVOID*)CONTAINING_RECORD(Blink, LDR_DATA_TABLE_ENTRY, ParentDllBase);
 			if (*v4 != qword_1843B0)
 				__fastfail(3u);
 
@@ -2702,8 +2702,8 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpInitializeNode(_LDR_DDAG_NODE* DdagNode)
 	for (i = (LDR_DATA_TABLE_ENTRY*)DdagNode->Modules.Blink; i != (LDR_DATA_TABLE_ENTRY*)DdagNode; i = (LDR_DATA_TABLE_ENTRY*)i->InLoadOrderLinks.Blink)
 	{
 		LdrEntry_2 = (LDR_DATA_TABLE_ENTRY*)((char*)i - 160);
-		//if (&i[-1].DdagNode != (LDR_DDAG_NODE**)LdrEntry)
-		if (CONTAINING_RECORD(i, LDR_DATA_TABLE_ENTRY, DdagNode) != LdrEntry)
+		if (&i[-1].DdagNode != (LDR_DDAG_NODE**)LdrEntry)
+		//if (CONTAINING_RECORD(i, LDR_DATA_TABLE_ENTRY, DdagNode) != LdrEntry)
 		{
 			if (LdrEntry_2->LoadReason == LoadReasonPatchImage)
 			{
@@ -2719,8 +2719,8 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpInitializeNode(_LDR_DDAG_NODE* DdagNode)
 			}
 
 			CurrentDllIniter = *LdrpCurrentDllInitializer;
-			//*LdrpCurrentDllInitializer = (UINT_PTR)&i[-1].DdagNode;
-			*LdrpCurrentDllInitializer = (UINT_PTR)CONTAINING_RECORD(i, LDR_DATA_TABLE_ENTRY, DdagNode);
+			*LdrpCurrentDllInitializer = (UINT_PTR)&i[-1].DdagNode;
+			//*LdrpCurrentDllInitializer = (UINT_PTR)CONTAINING_RECORD(i, LDR_DATA_TABLE_ENTRY, DdagNode);
 			EntryPoint = LdrEntry_2->EntryPoint;
 			pPreorderNumber = &LdrEntry_2->FullDllName;
 			WID_HIDDEN( LdrpLogInternal("minkernel\\ntdll\\ldrsnap.c", 1411, "LdrpInitializeNode", 2u, "Calling init routine %p for DLL \"%wZ\"\n", EntryPoint, &LdrEntry_2->FullDllName); )
@@ -2731,8 +2731,8 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpInitializeNode(_LDR_DDAG_NODE* DdagNode)
 			v20 = 0;
 			RtlActivateActivationContextUnsafeFast(&StackFrameExtended, LdrEntry_2->EntryPointActivationContext);
 			if (LdrEntry_2->TlsIndex)
-				//LdrpCallTlsInitializers(1i64, &i[-1].DdagNode);
-				LdrpCallTlsInitializers(1, CONTAINING_RECORD(i, LDR_DATA_TABLE_ENTRY, DdagNode));
+				LdrpCallTlsInitializers(1i64, (LDR_DATA_TABLE_ENTRY*)&i[-1].DdagNode);
+				//LdrpCallTlsInitializers(1, CONTAINING_RECORD(i, LDR_DATA_TABLE_ENTRY, DdagNode));
 
 			if (EntryPoint)
 			{
@@ -2741,7 +2741,8 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpInitializeNode(_LDR_DDAG_NODE* DdagNode)
 					ContextRecord = *LdrpProcessInitContextRecord;
 
 				ContextRecord_2 = ContextRecord;
-				CallSuccess = fLdrpCallInitRoutine((BOOL(__fastcall*)(HINSTANCE, DWORD, LPVOID))EntryPoint, LdrEntry_2->DllBase, DLL_PROCESS_ATTACH, ContextRecord);
+
+				CallSuccess = fLdrpCallInitRoutine((BOOL(__stdcall*)(HINSTANCE, DWORD, LPVOID))EntryPoint, LdrEntry_2->DllBase, DLL_PROCESS_ATTACH, ContextRecord);
 			}
 			RtlDeactivateActivationContextUnsafeFast(&StackFrameExtended);
 			*LdrpCurrentDllInitializer = CurrentDllIniter;
@@ -2762,7 +2763,7 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpInitializeNode(_LDR_DDAG_NODE* DdagNode)
 	return Status;
 }
 
-BOOLEAN __fastcall LOADLIBRARY::fLdrpCallInitRoutine(BOOL(__fastcall* DllMain)(HINSTANCE hInstDll, DWORD fdwReason, LPVOID lpvReserved), PIMAGE_DOS_HEADER DllBase, unsigned int One, LPVOID ContextRecord)
+BOOLEAN __fastcall LOADLIBRARY::fLdrpCallInitRoutine(BOOL(__stdcall* DllMain)(HINSTANCE hInstDll, DWORD fdwReason, LPVOID lpvReserved), PIMAGE_DOS_HEADER DllBase, unsigned int One, LPVOID ContextRecord)
 {
 	BOOLEAN ReturnVal = TRUE;
 
@@ -2793,9 +2794,6 @@ BOOLEAN __fastcall LOADLIBRARY::fLdrpCallInitRoutine(BOOL(__fastcall* DllMain)(H
 	}
 
 	// DLL_PROCESS_ATTACH (1)
-	printf("Press key to call dllmain.\n");
-	getchar();
-
 	ReturnVal = DllMain((HINSTANCE)DllBase, One, ContextRecord);
 	if (RtlGetCurrentServiceSessionId())
 		LoggingVar = (PCHAR)&NtCurrentPeb()->SharedData->NtSystemRoot[253];
