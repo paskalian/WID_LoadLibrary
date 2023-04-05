@@ -12,7 +12,7 @@ The purpose of these series are **only** to understand Windows better, there is 
 All the function implementations given are my own, they are not guaranteed to represent the exact functionality.
 
 ### Discord
-If you have further questions you can come to my discord server clicking the above icon.
+If you have further questions you can join my discord server by clicking the above icon.
 
 # Usage
 Pretty easy, you first include "WID.h" into your source file. Then you create a LOADLIBRARY instance with a path given, and that's it. Now you can almost see the entire loading process!
