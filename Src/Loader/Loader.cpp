@@ -1673,7 +1673,7 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpMapDllNtFileName(PLDRP_LOAD_CONTEXT LoadCo
 	// SYSTEM_FLAGS_INFORMATION
 	if ((NtCurrentPeb()->NtGlobalFlag & FLG_ENABLE_KDEBUG_SYMBOL_LOAD))
 	{
-		ZwSystemDebugControl();
+		WID_HIDDEN( ZwSystemDebugControl(); )
 	}
 
 	HANDLE FileHandle;
@@ -2857,7 +2857,7 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpInitializeNode(_LDR_DDAG_NODE* DdagNode)
 			v20 = 0;
 			RtlActivateActivationContextUnsafeFast(&StackFrameExtended, LdrEntry_2->EntryPointActivationContext);
 			if (LdrEntry_2->TlsIndex)
-				LdrpCallTlsInitializers(1i64, (LDR_DATA_TABLE_ENTRY*)&i[-1].DdagNode);
+				fLdrpCallTlsInitializers(1i64, (LDR_DATA_TABLE_ENTRY*)&i[-1].DdagNode);
 				//LdrpCallTlsInitializers(1, CONTAINING_RECORD(i, LDR_DATA_TABLE_ENTRY, DdagNode));
 
 			if (EntryPoint)
@@ -2889,7 +2889,38 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpInitializeNode(_LDR_DDAG_NODE* DdagNode)
 	return Status;
 }
 
-BOOLEAN __fastcall LOADLIBRARY::fLdrpCallInitRoutine(BOOL(__stdcall* DllMain)(HINSTANCE hInstDll, DWORD fdwReason, LPVOID lpvReserved), PIMAGE_DOS_HEADER DllBase, unsigned int One, LPVOID ContextRecord)
+BOOL __fastcall LOADLIBRARY::fLdrpCallTlsInitializers(DWORD fdwReason, LDR_DATA_TABLE_ENTRY* LdrEntry)
+{
+	BOOL Result = FALSE;
+
+	RtlAcquireSRWLockShared(LdrpTlsLock);
+
+	TLS_ENTRY* TlsEntry = LdrpFindTlsEntry(LdrEntry);
+
+	RtlReleaseSRWLockShared(LdrpTlsLock);
+	if (TlsEntry)
+	{
+		LPVOID* AddressOfCallBacks = (LPVOID*)TlsEntry->TlsDirectory.AddressOfCallBacks;
+		if (AddressOfCallBacks)
+		{
+			while (TRUE)
+			{
+				LPVOID ContextRecord = *AddressOfCallBacks;
+				if (!ContextRecord)
+					break;
+
+				++AddressOfCallBacks;
+				WID_HIDDEN( LdrpLogInternal("minkernel\\ntdll\\ldrtls.c", 1180, "LdrpCallTlsInitializers", 2u, "Calling TLS callback %p for DLL \"%wZ\" at %p\n", ContextRecord, &LdrEntry->FullDllName, LdrEntry->DllBase); )
+				
+				Result = fLdrpCallInitRoutine(ImageTlsCallbackCaller, LdrEntry->DllBase, fdwReason, ContextRecord);
+			}
+		}
+	}
+
+	return Result;
+}
+
+BOOLEAN __fastcall LOADLIBRARY::fLdrpCallInitRoutine(BOOL(__fastcall* DllMain)(HINSTANCE hInstDll, DWORD fdwReason, LPVOID lpvReserved), PIMAGE_DOS_HEADER DllBase, unsigned int One, LPVOID ContextRecord)
 {
 	BOOLEAN ReturnVal = TRUE;
 

@@ -74,6 +74,8 @@ NTSTATUS WID::Init()
 		(qword_1843B0							= (UINT_PTR*)							((PCHAR)NtdllModule + 0x1843B0)								,assert(qword_1843B0));
 		(LdrpCurrentDllInitializer				= (UINT_PTR*)							((PCHAR)NtdllModule + 0x184A88)								,assert(LdrpCurrentDllInitializer));
 		(LdrpProcessInitContextRecord			= (LPVOID**)							((PCHAR)NtdllModule + 0x184358)								,assert(LdrpProcessInitContextRecord));
+		(LdrpTlsLock							= (PRTL_SRWLOCK)						((PCHAR)NtdllModule + 0x184EF8)								,assert(LdrpTlsLock));
+		(LdrpTlsList							= (TLS_ENTRY**)							((PCHAR)NtdllModule + 0x17E2B0)								,assert(LdrpTlsList));
 
 		// Exported functions
 		(NtOpenThreadToken						= (tNtOpenThreadToken)					GetProcAddress(NtdllModule, "NtOpenThreadToken")			,assert(NtOpenThreadToken));
@@ -101,6 +103,8 @@ NTSTATUS WID::Init()
 		(RtlCharToInteger						= (tRtlCharToInteger)					GetProcAddress(NtdllModule, "RtlCharToInteger")				,assert(RtlCharToInteger));
 		(RtlActivateActivationContextUnsafeFast = (tRtlActivateActivationContextUnsafeFast)GetProcAddress(NtdllModule, "RtlActivateActivationContextUnsafeFast"),assert(RtlActivateActivationContextUnsafeFast));
 		(RtlDeactivateActivationContextUnsafeFast = (tRtlDeactivateActivationContextUnsafeFast)GetProcAddress(NtdllModule, "RtlDeactivateActivationContextUnsafeFast"),assert(RtlDeactivateActivationContextUnsafeFast));
+		(RtlAcquireSRWLockShared				= (tRtlAcquireSRWLockShared)			GetProcAddress(NtdllModule, "RtlAcquireSRWLockShared")		,assert(RtlAcquireSRWLockShared));
+		(RtlReleaseSRWLockShared				= (tRtlReleaseSRWLockShared)			GetProcAddress(NtdllModule, "RtlReleaseSRWLockShared")		,assert(RtlReleaseSRWLockShared));
 
 		// Signatured.
 		// I don't think the signatures will ever change, you can go with the offsets though.

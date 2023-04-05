@@ -42,6 +42,8 @@ UINT_PTR***             qword_1843B8                    = nullptr;
 UINT_PTR*               qword_1843B0                    = nullptr;
 UINT_PTR*               LdrpCurrentDllInitializer       = nullptr;
 LPVOID**                LdrpProcessInitContextRecord    = nullptr;
+PRTL_SRWLOCK			LdrpTlsLock                     = nullptr;
+TLS_ENTRY**             LdrpTlsList                     = nullptr;
 
 tLdrpManifestProberRoutine LdrpManifestProberRoutine    = nullptr;
 tLdrpRedirectionCalloutFunc LdrpRedirectionCalloutFunc  = nullptr;
@@ -592,6 +594,23 @@ BOOL __fastcall LdrpIsExecutableRelocatedImage(PIMAGE_DOS_HEADER DllBase)
         && (MemoryInformation.ImageFlags & 1) == 0;
 }
 
+TLS_ENTRY* __fastcall LdrpFindTlsEntry(LDR_DATA_TABLE_ENTRY* LdrEntry)
+{
+    TLS_ENTRY* TlsEntry;
+
+    for (TlsEntry = *LdrpTlsList; TlsEntry != (TLS_ENTRY*)LdrpTlsList; TlsEntry = (TLS_ENTRY*)TlsEntry->TlsEntry.Flink)
+    {
+        if ((LDR_DATA_TABLE_ENTRY*)TlsEntry->ModuleEntry == LdrEntry)
+            return TlsEntry;
+    }
+    return nullptr;
+}
+
+BOOL __fastcall ImageTlsCallbackCaller(HINSTANCE hInstDll, DWORD fdwReason, LPVOID lpvReserved)
+{
+    ((void(__fastcall*)(HINSTANCE, DWORD, LPVOID))lpvReserved)(hInstDll, fdwReason, 0);
+    return 1;
+}
 
 // Implemented inside LOADLIBRARY class to use WID_HIDDEN
 NTSTATUS __fastcall WID::Loader::LOADLIBRARY::LdrpThreadTokenSetMainThreadToken() // CHECKED.
@@ -809,6 +828,8 @@ tRtlReleaseActivationContext        RtlReleaseActivationContext         = nullpt
 tRtlCharToInteger                   RtlCharToInteger                    = nullptr;
 tRtlActivateActivationContextUnsafeFast RtlActivateActivationContextUnsafeFast = nullptr;
 tRtlDeactivateActivationContextUnsafeFast RtlDeactivateActivationContextUnsafeFast = nullptr;
+tRtlAcquireSRWLockShared            RtlAcquireSRWLockShared             = nullptr;
+tRtlReleaseSRWLockShared            RtlReleaseSRWLockShared             = nullptr;
 
 // Signatured
 tLdrpLogInternal			                        LdrpLogInternal				            = nullptr;

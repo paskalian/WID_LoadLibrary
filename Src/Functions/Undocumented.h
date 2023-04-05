@@ -930,6 +930,14 @@ typedef struct _MEMORY_IMAGE_INFORMATION
     };
 } MEMORY_IMAGE_INFORMATION, * PMEMORY_IMAGE_INFORMATION;
 
+typedef struct _TLS_ENTRY
+{
+    LIST_ENTRY TlsEntry;
+    IMAGE_TLS_DIRECTORY TlsDirectory;
+    PLDR_DATA_TABLE_ENTRY ModuleEntry;
+    SIZE_T Index;
+} TLS_ENTRY, *PTLS_ENTRY;
+
 enum SECTION_INHERIT
 {
     ViewShare = 1,

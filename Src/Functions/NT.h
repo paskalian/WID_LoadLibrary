@@ -79,6 +79,8 @@ extern UINT_PTR***				qword_1843B8;
 extern UINT_PTR*				qword_1843B0;
 extern UINT_PTR*				LdrpCurrentDllInitializer;
 extern LPVOID**					LdrpProcessInitContextRecord;
+extern PRTL_SRWLOCK				LdrpTlsLock;
+extern TLS_ENTRY**				LdrpTlsList;
 
 typedef NTSTATUS(__fastcall** tLdrpManifestProberRoutine)(PIMAGE_DOS_HEADER Base, PWCHAR, PVOID);
 extern tLdrpManifestProberRoutine LdrpManifestProberRoutine;
@@ -112,6 +114,8 @@ PIMAGE_SECTION_HEADER __fastcall RtlSectionTableFromVirtualAddress(PIMAGE_NT_HEA
 PIMAGE_SECTION_HEADER __fastcall RtlAddressInSectionTable(PIMAGE_NT_HEADERS NtHeader, PVOID Base, UINT_PTR Address);
 BOOLEAN __fastcall LdrpValidateEntrySection(LDR_DATA_TABLE_ENTRY* DllEntry);
 BOOL __fastcall LdrpIsExecutableRelocatedImage(PIMAGE_DOS_HEADER DllBase);
+TLS_ENTRY* __fastcall LdrpFindTlsEntry(LDR_DATA_TABLE_ENTRY* LdrEntry);
+BOOL __fastcall ImageTlsCallbackCaller(HINSTANCE hInstDll, DWORD fdwReason, LPVOID lpvReserved);
 
 extern "C" NTSTATUS __fastcall ZwSystemDebugControl();
 extern "C" NTSTATUS __fastcall NtCreateSection(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess, OBJECT_ATTRIBUTES * ObjectAttributes, PLARGE_INTEGER MaximumSize, ULONG SectionPageProtection, ULONG AllocationAttributes, HANDLE FileHandle);
@@ -197,6 +201,12 @@ extern tRtlActivateActivationContextUnsafeFast RtlActivateActivationContextUnsaf
 
 typedef VOID(__fastcall* tRtlDeactivateActivationContextUnsafeFast)(RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_EXTENDED* StackFrameExtended);
 extern tRtlDeactivateActivationContextUnsafeFast RtlDeactivateActivationContextUnsafeFast;
+
+typedef NTSTATUS(__fastcall* tRtlAcquireSRWLockShared)(PRTL_SRWLOCK SrwLock);
+extern tRtlAcquireSRWLockShared RtlAcquireSRWLockShared;
+
+typedef NTSTATUS(__fastcall* tRtlReleaseSRWLockShared)(PRTL_SRWLOCK SrwLock);
+extern tRtlReleaseSRWLockShared RtlReleaseSRWLockShared;
 
 // Signatured
 #define LDRP_LOG_INTERNAL_PATTERN "\x89\x54\x24\x10\x4C\x8B\xDC\x49\x89\x4B\x08"

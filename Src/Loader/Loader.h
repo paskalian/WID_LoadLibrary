@@ -130,7 +130,8 @@ namespace WID
 			NTSTATUS __fastcall fLdrpPrepareModuleForExecution(PLDR_DATA_TABLE_ENTRY LdrEntry, NTSTATUS* pStatus);
 			NTSTATUS __fastcall fLdrpInitializeGraphRecurse(LDR_DDAG_NODE* DdagNode, NTSTATUS* pStatus, char* Unknown);
 			NTSTATUS __fastcall fLdrpInitializeNode(_LDR_DDAG_NODE* DdagNode);
-			BOOLEAN __fastcall fLdrpCallInitRoutine(BOOL(__stdcall* DllMain)(HINSTANCE hInstDll, DWORD fdwReason, LPVOID lpvReserved), PIMAGE_DOS_HEADER DllBase, unsigned int One, LPVOID ContextRecord);
+			BOOL	 __fastcall fLdrpCallTlsInitializers(DWORD fdwReason, LDR_DATA_TABLE_ENTRY* LdrEntry);
+			BOOLEAN	 __fastcall fLdrpCallInitRoutine(BOOL(__fastcall* DllMain)(HINSTANCE hInstDll, DWORD fdwReason, LPVOID lpvReserved), PIMAGE_DOS_HEADER DllBase, unsigned int One, LPVOID ContextRecord);
 
 			NTSTATUS __fastcall fBasepLoadLibraryAsDataFileInternal(PUNICODE_STRING DllName, PWSTR Path, PWSTR Unknown, DWORD dwFlags, HMODULE* pBaseOfLoadedModule);
 		public:
