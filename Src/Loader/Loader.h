@@ -126,7 +126,6 @@ namespace WID
 			NTSTATUS __fastcall fLdrpMapAndSnapDependency(PLDRP_LOAD_CONTEXT LoadContext);
 			NTSTATUS __fastcall fLdrpPrepareImportAddressTableForSnap(LDRP_LOAD_CONTEXT* LoadContext);
 
-
 			NTSTATUS __fastcall fLdrpPrepareModuleForExecution(PLDR_DATA_TABLE_ENTRY LdrEntry, NTSTATUS* pStatus);
 			NTSTATUS __fastcall fLdrpInitializeGraphRecurse(LDR_DDAG_NODE* DdagNode, NTSTATUS* pStatus, char* Unknown);
 			NTSTATUS __fastcall fLdrpInitializeNode(_LDR_DDAG_NODE* DdagNode);
