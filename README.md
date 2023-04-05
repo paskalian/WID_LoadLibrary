@@ -854,3 +854,128 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpMapDllNtFileName(PLDRP_LOAD_CONTEXT LoadCo
 }
 ```
 Opens the file with NtOpenFile, creates a section using NtCreateSection to be able to map the dll, continues with calling LdrpMapDllWithSectionHandle.
+<br>
+## LdrpMapDllWithSectionHandle
+```cpp
+NTSTATUS __fastcall LOADLIBRARY::fLdrpMapDllWithSectionHandle(PLDRP_LOAD_CONTEXT LoadContext, HANDLE SectionHandle) // CHECKED.
+{
+    NTSTATUS Status;
+    NTSTATUS Status2;
+    NTSTATUS Status3;
+    NTSTATUS Status4;
+        
+    int v19[14];
+
+    LDR_DATA_TABLE_ENTRY* LdrEntry2;
+
+    // Mapping mechanism.
+    Status = fLdrpMinimalMapModule(LoadContext, SectionHandle);
+    Status2 = Status;
+    if (Status == STATUS_IMAGE_MACHINE_TYPE_MISMATCH)
+        return Status2;
+
+    if (!NT_SUCCESS(Status))
+        return Status2;
+
+    //LDR_DATA_TABLE_ENTRY* DllEntry = (LDR_DATA_TABLE_ENTRY*)LoadContext->WorkQueueListEntry.Flink;
+    LDR_DATA_TABLE_ENTRY* DllEntry = CONTAINING_RECORD(LoadContext->WorkQueueListEntry.Flink, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+    SIZE_T Size = LoadContext->Size;
+    LDR_DATA_TABLE_ENTRY* LdrEntry = nullptr;
+    Status3 = Status;
+
+    PIMAGE_NT_HEADERS OutHeaders;
+    Status2 = RtlImageNtHeaderEx(0, DllEntry->DllBase, Size, &OutHeaders);
+    if (!NT_SUCCESS(Status2))
+        return Status2;
+
+    if (LoadContext->Flags & SEC_FILE)
+    {
+        Status3 = STATUS_SUCCESS;
+        DllEntry->TimeDateStamp = OutHeaders->FileHeader.TimeDateStamp;
+        DllEntry->CheckSum = OutHeaders->OptionalHeader.CheckSum;
+        DllEntry->SizeOfImage = OutHeaders->OptionalHeader.SizeOfImage;
+    }
+    else
+    {
+        RtlAcquireSRWLockExclusive(LdrpModuleDatatableLock);
+        UINT_PTR Flags = (LoadContext->Flags) & UINT_MAX;
+        PUNICODE_STRING FullDllName_2 = 0;
+        if ((Flags & 0x20) == 0)
+            FullDllName_2 = &DllEntry->FullDllName;
+
+
+        // Returns STATUS_DLL_NOT_FOUND is normal situations.
+        Status4 = LdrpFindLoadedDllByNameLockHeld(&DllEntry->BaseDllName, FullDllName_2, Flags, &LdrEntry, DllEntry->BaseNameHashValue);
+        if (Status4 == STATUS_DLL_NOT_FOUND)
+        {
+            PIMAGE_DOS_HEADER DllBase = DllEntry->DllBase;
+            v19[0] = OutHeaders->FileHeader.TimeDateStamp;
+            v19[1] = OutHeaders->OptionalHeader.SizeOfImage;
+            LdrpFindLoadedDllByMappingLockHeld(DllBase, OutHeaders, (ULONG*)v19, &LdrEntry);
+        }
+
+        if (!LdrEntry)
+        {
+            LdrpInsertDataTableEntry(DllEntry);
+            LdrpInsertModuleToIndexLockHeld(DllEntry, OutHeaders);
+        }
+
+        RtlReleaseSRWLockExclusive(LdrpModuleDatatableLock);
+        if (LdrEntry)
+        {
+            if (DllEntry->LoadReason != LoadReasonPatchImage || LdrEntry->LoadReason == LoadReasonPatchImage)
+            {
+                LdrpLoadContextReplaceModule(LoadContext, LdrEntry);
+            }
+            else
+            {
+                Status2 = STATUS_IMAGE_LOADED_AS_PATCH_IMAGE;
+                WID_HIDDEN( LdrpLogEtwHotPatchStatus(&(*LdrpImageEntry)->BaseDllName, LoadContext->Entry, &DllEntry->FullDllName, STATUS_IMAGE_LOADED_AS_PATCH_IMAGE, 3); )
+                LdrpDereferenceModule(LdrEntry);
+            }
+            return Status2;
+        }
+    }
+    if (*qword_17E238 == NtCurrentTeb()->ClientId.UniqueThread)
+        return STATUS_NOT_FOUND;
+
+    Status2 = fLdrpCompleteMapModule(LoadContext, OutHeaders, Status3);
+    if (NT_SUCCESS(Status2))
+    {
+        Status2 = fLdrpProcessMappedModule(DllEntry, LoadContext->Flags & UINT_MAX, 1);
+        if (NT_SUCCESS(Status2))
+        {
+            WID_HIDDEN( LdrpLogNewDllLoad(LoadContext->Entry, DllEntry); )
+            LdrEntry2 = LoadContext->Entry;
+            if (LdrEntry2)
+                DllEntry->ParentDllBase = LdrEntry2->DllBase;
+
+            BOOLEAN DllBasesEqual = FALSE;
+            if (DllEntry->LoadReason == LoadReasonPatchImage && *LdrpImageEntry)
+                DllBasesEqual = DllEntry->ParentDllBase == (*LdrpImageEntry)->DllBase;
+
+            if ((LoadContext->Flags & SEC_FILE) || (DllEntry->FlagGroup[0] & ImageDll) || DllBasesEqual)
+            {
+                if ((DllEntry->Flags & CorILOnly))
+                {
+                    return fLdrpCorProcessImports(DllEntry);
+                }
+                else
+                {
+                    fLdrpMapAndSnapDependency(LoadContext);
+                    return *LoadContext->pStatus;
+                }
+            }
+            else
+            {
+                WID_HIDDEN( LdrpLogDllState((ULONG)DllEntry->DllBase, &DllEntry->FullDllName, 0x14AEu); )
+                Status2 = STATUS_SUCCESS;
+                DllEntry->DdagNode->State = LdrModulesReadyToRun;
+            }
+        }
+    }
+
+    return Status2;
+}
+```
+Maps a view of section inside LdrpMinimalMapModule, validates the image inside LdrpCompleteMapModule, handles relocations inside LdrpProcessMappedModule, updates state inside LdrpCorProcessImports, goes on by calling LdrpMapAndSnapDependency.
