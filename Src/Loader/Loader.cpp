@@ -49,11 +49,13 @@ NTSTATUS LOADLIBRARY::Load()
 	switch (CreationInfo.LoadType)
 	{
 	case LOADTYPE::DEFAULT:
-	case LOADTYPE::HIDDEN:
+	//case LOADTYPE::HIDDEN:
 		DllHandle = fLoadLibrary(CreationInfo.DllPath);
 		if (!DllHandle || DllHandle == INVALID_HANDLE_VALUE)
 			break;
 		return STATUS_SUCCESS;
+	case LOADTYPE::HIDDEN:
+		WID_DBG( printf("[WID] >> Hidden loading isn't available currently.\n"); )
 	default:
 		return STATUS_INVALID_PARAMETER;
 	}
@@ -2795,6 +2797,7 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpInitializeNode(LDR_DDAG_NODE* DdagNode)
 
 		Blink = (LDR_DATA_TABLE_ENTRY*)Blink->InLoadOrderLinks.Blink;
 	}
+
 	Status = STATUS_SUCCESS;
 	for (LDR_DATA_TABLE_ENTRY* i = (LDR_DATA_TABLE_ENTRY*)DdagNode->Modules.Blink; i != (LDR_DATA_TABLE_ENTRY*)DdagNode; i = (LDR_DATA_TABLE_ENTRY*)i->InLoadOrderLinks.Blink)
 	{
@@ -2838,6 +2841,7 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpInitializeNode(LDR_DDAG_NODE* DdagNode)
 
 				CallSuccess = fLdrpCallInitRoutine((BOOL(__stdcall*)(HINSTANCE, DWORD, LPVOID))EntryPoint, LdrEntry_2->DllBase, DLL_PROCESS_ATTACH, ContextRecord);
 			}
+
 			RtlDeactivateActivationContextUnsafeFast(&StackFrameExtended);
 			*LdrpCurrentDllInitializer = CurrentDllIniter;
 			LdrEntry_2->Flags |= ProcessAttachCalled;
@@ -2901,7 +2905,7 @@ BOOLEAN __fastcall LOADLIBRARY::fLdrpCallInitRoutine(BOOL(__fastcall* DllMain)(H
 
 	PCHAR LoggingVar3 = 0;
 	PCHAR LoggingVar4 = 0;
-	if (*LoggingVar2 && (NtCurrentPeb()->TracingFlags & 4) != 0)
+	if (*LoggingVar2 && (NtCurrentPeb()->TracingFlags & LibLoaderTracingEnabled) != 0)
 	{
 		LoggingVar3 = (PCHAR)&kUserSharedData->UserModeGlobalLogger[2] + 1;
 		if (RtlGetCurrentServiceSessionId())
