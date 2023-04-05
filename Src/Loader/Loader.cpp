@@ -364,7 +364,7 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpLoadDllInternal(PUNICODE_STRING FullPath, 
 	// MOST FLAGS = CONVERTED_DONT_RESOLVE_DLL_REFERENCES (0x2) | LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE (0x40) | LOAD_LIBRARY_REQUIRE_SIGNED_TARGET (0x80)
 	// LOAD_LIBRARY_SEARCH_APPLICATION_DIR (0x200) | LOAD_LIBRARY_SEARCH_USER_DIRS (0x400)
 
-	WID_HIDDEN(LdrpLogInternal("minkernel\\ntdll\\ldrapi.c", 0x379, "LdrpLoadDllInternal", 3, "DLL name: %wZ\n", FullPath); )
+	WID_HIDDEN( LdrpLogInternal("minkernel\\ntdll\\ldrapi.c", 0x379, "LdrpLoadDllInternal", 3, "DLL name: %wZ\n", FullPath); )
 
 	bool IsWorkerThread = false;
 	do
@@ -379,7 +379,7 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpLoadDllInternal(PUNICODE_STRING FullPath, 
 			Status = LdrpFastpthReloadedDll(FullPath, Flags, LdrEntry2, DllEntry); // returns STATUS_DLL_NOT_FOUND in normal circumstances.
 
 			// If not an actual nt success (excludes warnings)
-			if (!(NT_SUCCESS((int)(Status + 0x80000000))) || Status == STATUS_IMAGE_LOADED_AS_PATCH_IMAGE)
+			if (!NT_SUCCESS((LONG)(Status + 0x80000000)) || Status == STATUS_IMAGE_LOADED_AS_PATCH_IMAGE)
 			{
 				*pStatus = Status;
 				break;
@@ -401,8 +401,10 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpLoadDllInternal(PUNICODE_STRING FullPath, 
 					LdrpFreeUnicodeString(FullPath);
 
 				*pStatus = Status;
+
 				if (IsWorkerThread)
 					LdrpDropLastInProgressCount();
+
 				break;
 			}
 
@@ -410,26 +412,28 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpLoadDllInternal(PUNICODE_STRING FullPath, 
 			{
 				Status = STATUS_PATCH_CONFLICT;
 
-				// goto FREE_DLLNAMEPREPROCANDRETURN;
 				if (FullPath->Buffer)
 					LdrpFreeUnicodeString(FullPath);
 
 				*pStatus = Status;
+
 				if (IsWorkerThread)
 					LdrpDropLastInProgressCount();
+
 				break;
 			}
 
 			Status = LdrpQueryCurrentPatch(LdrEntry->CheckSum, LdrEntry->TimeDateStamp, FullPath);
 			if (!NT_SUCCESS(Status))
 			{
-				// goto FREE_DLLNAMEPREPROCANDRETURN;
 				if (FullPath->Buffer)
 					LdrpFreeUnicodeString(FullPath);
 
 				*pStatus = Status;
+
 				if (IsWorkerThread)
 					LdrpDropLastInProgressCount();
+
 				break;
 			}
 
@@ -438,11 +442,11 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpLoadDllInternal(PUNICODE_STRING FullPath, 
 				if (LdrEntry->ActivePatchImageBase)
 					Status = LdrpUndoPatchImage(LdrEntry);
 
-				// goto FREE_DLLNAMEPREPROCANDRETURN;
 				if (FullPath->Buffer)
 					LdrpFreeUnicodeString(FullPath);
 
 				*pStatus = Status;
+
 				if (IsWorkerThread)
 					LdrpDropLastInProgressCount();
 
@@ -547,6 +551,7 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpLoadDllInternal(PUNICODE_STRING FullPath, 
 					}
 				}
 			}
+
 			LdrpFreeLoadContextOfNode(pLdrEntryLoaded->DdagNode, pStatus);
 			if (!NT_SUCCESS(*pStatus) && (LdrFlags != (PackagedBinary | LoadNotificationsSent) || pLdrEntryLoaded->HotPatchState != LdrHotPatchAppliedReverse))
 			{
@@ -560,15 +565,18 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpLoadDllInternal(PUNICODE_STRING FullPath, 
 			*pStatus = STATUS_NO_MEMORY;
 		}
 	} while (FALSE);
+	
+	if (IsWorkerThread)
+		LdrpDropLastInProgressCount();
 
 	// LoadNotificationsSent (0x8) | PackagedBinary (0x1)
 	// Because the LdrFlags was sent 0x4 (ImageDll), we can ignore this one too.
 	if (LdrFlags == (LoadNotificationsSent | PackagedBinary) && LdrEntry)
 		LdrpDereferenceModule(LdrEntry);
 
-	// Actually returns what LdrpLogInternal returns.
-	WID_HIDDEN( LdrpLogInternal("minkernel\\ntdll\\ldrapi.c", 0x52E, "LdrpLoadDllInternal", 4, "Status: 0x%08lx\n", *pStatus); )
-	return *pStatus;
+	Status = *pStatus;
+	WID_HIDDEN( Status = LdrpLogInternal("minkernel\\ntdll\\ldrapi.c", 0x52E, "LdrpLoadDllInternal", 4, "Status: 0x%08lx\n", Status); )
+	return Status;
 }
 
 NTSTATUS __fastcall LOADLIBRARY::fLdrpProcessWork(PLDRP_LOAD_CONTEXT LoadContext, BOOLEAN IsLoadOwner) // CHECKED.
