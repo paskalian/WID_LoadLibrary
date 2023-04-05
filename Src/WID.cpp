@@ -183,12 +183,13 @@ NTSTATUS WID::Init()
 		(LdrpSendDllNotifications					= (tLdrpSendDllNotifications)				Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_SEND_DLLNOTIFICATIONS_PATTERN,		strlen(LDRP_SEND_DLLNOTIFICATIONS_PATTERN))			,assert(LdrpSendDllNotifications));
 		(LdrpCallTlsInitializers					= (tLdrpCallTlsInitializers)				Helper::SigScan((PCHAR)NtdllModule, NtdllModuleInfo.SizeOfImage, LDRP_CALL_TLSINIT_PATTERN,					strlen(LDRP_CALL_TLSINIT_PATTERN))					,assert(LdrpCallTlsInitializers));
 
-		WID_DBG( printf("[WID] >> Initialized.\n"); )
+		WID_DBG(TEXT("[WID] >> Initialized.\n"));
 
 		bInitialized = TRUE;
 		return STATUS_SUCCESS;
 	}
-	WID_DBG( printf("[WID] >> Already initialized.\n"); )
+
+	WID_DBG(TEXT("[WID] >> Already initialized.\n"));
 	return STATUS_SUCCESS;
 }
 

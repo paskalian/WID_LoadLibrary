@@ -8,9 +8,13 @@
 #include "Loader/Loader.h"
 
 #ifdef _DEBUG
-#define WID_DBG(x) { x }
+#ifdef UNICODE
+#define WID_DBG wprintf
 #else
-#define WID_DBG(x)
+#define WID_DBG printf
+#endif
+#else
+#define WID_DBG ;
 #endif
 #define WID_HIDDEN(x) { if(CreationInfo.LoadType == LOADTYPE::DEFAULT){x} }
 

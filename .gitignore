@@ -5,3 +5,5 @@
 /.vs
 /WID_LoadLibrary.vcxproj.user
 /x64/Debug
+/Debug/WID_LoadLibrary.tlog
+/Debug

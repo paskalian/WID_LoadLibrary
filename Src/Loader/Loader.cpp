@@ -18,12 +18,12 @@ LOADLIBRARY::LOADLIBRARY(TCHAR* DllPath, DWORD Flags, LOADTYPE LoadType)
 	NTSTATUS Status = STATUS_SUCCESS;
 	if (Status = Load(), NT_SUCCESS(Status))
 	{
-		WID_DBG( printf("[WID] >> (Path: %s), (Flags: %lu) load successful.\n", DllPath, Flags); )
-		WID_DBG( printf("[WID] >> Base address: %p.\n", DllHandle); )
+		WID_DBG(TEXT("[WID] >> (Path: %s), (Flags: %lu) load successful.\n"), DllPath, Flags);
+		WID_DBG(TEXT("[WID] >> Base address: %p.\n"), DllHandle);
 	}
 	else
 	{
-		WID_DBG( printf("[WID] >> (Path: %s), (Flags: %lu) load failed, err: 0x%X.\n", DllPath, Flags, Status); )
+		WID_DBG(TEXT("[WID] >> (Path: %s), (Flags: %lu) load failed, err: 0x%X.\n"), DllPath, Flags, Status);
 	}
 }
 
@@ -32,11 +32,11 @@ LOADLIBRARY::~LOADLIBRARY()
 	NTSTATUS Status = STATUS_SUCCESS;
 	if (Status = Unload(), NT_SUCCESS(Status))
 	{
-		WID_DBG( printf("[WID] >> (Path: %s), (Flags: %lu) unload successful.\n", CreationInfo.DllPath, CreationInfo.Flags); )
+		WID_DBG(TEXT("[WID] >> (Path: %s), (Flags: %lu) unload successful.\n"), CreationInfo.DllPath, CreationInfo.Flags);
 	}
 	else
 	{
-		WID_DBG( printf("[WID] >> (Path: %s), (Flags: %lu) unload failed, err: 0x%X.\n", CreationInfo.DllPath, CreationInfo.Flags, Status); )
+		WID_DBG(TEXT("[WID] >> (Path: %s), (Flags: %lu) unload failed, err: 0x%X.\n"), CreationInfo.DllPath, CreationInfo.Flags, Status);
 	}
 }
 
@@ -55,7 +55,7 @@ NTSTATUS LOADLIBRARY::Load()
 			break;
 		return STATUS_SUCCESS;
 	case LOADTYPE::HIDDEN:
-		WID_DBG( printf("[WID] >> Hidden loading isn't available currently.\n"); )
+		WID_DBG(TEXT("[WID] >> Hidden loading isn't available currently.\n"));
 	default:
 		return STATUS_INVALID_PARAMETER;
 	}
@@ -2362,7 +2362,7 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpMapAndSnapDependency(PLDRP_LOAD_CONTEXT Lo
 		ULONG OldCurrentDll = 0;
 		if (*LdrpIsHotPatchingEnabled)
 		{
-			DllEntry = (LDR_DATA_TABLE_ENTRY*)LoadContext->WorkQueueListEntry.Flink;
+			DllEntry = CONTAINING_RECORD(LoadContext->WorkQueueListEntry.Flink, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 			if (DllEntry)
 			{
 				Status = LdrpQueryCurrentPatch(DllEntry->CheckSum, DllEntry->TimeDateStamp, &FullPath);
