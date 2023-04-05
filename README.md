@@ -1347,3 +1347,242 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpPrepareModuleForExecution(PLDR_DATA_TABLE_
 }
 ```
 Adds a service tag to our module by LdrModulesCondensed, continues by LdrModulesReadyToInit acquiring a Loader lock first then calling LdrpInitializeGraphRecurse.
+<br>
+## LdrpInitializeGraphRecurse
+```cpp
+NTSTATUS __fastcall LOADLIBRARY::fLdrpInitializeGraphRecurse(LDR_DDAG_NODE* DdagNode, NTSTATUS* pStatus, char* Unknown)
+{
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    if (DdagNode->State == LdrModulesInitError)
+        return STATUS_DLL_INIT_FAILED;
+
+    LDR_DDAG_NODE* DdagNode2 = (LDR_DDAG_NODE*)DdagNode->Dependencies.Tail;
+    CHAR Unknown2_2 = 0;
+    CHAR Unknown2 = 0;
+
+    BOOLEAN JumpIn = FALSE;
+    do
+    {
+        if (DdagNode2)
+        {
+            LDR_DDAG_NODE* DdagNode2_2 = DdagNode2;
+            do
+            {
+                DdagNode2_2 = (LDR_DDAG_NODE*)DdagNode2_2->Modules.Flink;
+                if ((DdagNode2_2->LoadCount & 1) == 0)
+                {
+                    LDR_DDAG_NODE* Blink = (LDR_DDAG_NODE*)DdagNode2_2->Modules.Blink;
+                    if (Blink->State == LdrModulesReadyToInit)
+                    {
+                        Status = fLdrpInitializeGraphRecurse(Blink, pStatus, &Unknown2);
+                        if (!NT_SUCCESS(Status))
+                        {
+                            JumpIn = TRUE;
+                            break;
+                        }
+                        Unknown2_2 = Unknown2;
+                    }
+                    else
+                    {
+                        if (Blink->State == LdrModulesInitError)
+                        {
+                            Status = STATUS_DLL_INIT_FAILED;
+                            {
+                                JumpIn = TRUE;
+                                break;
+                            }
+                        }
+                        if (Blink->State == LdrModulesInitializing)
+                            Unknown2_2 = 1;
+                        Unknown2 = Unknown2_2;
+                    }
+                }
+            } while (DdagNode2_2 != DdagNode2);
+
+            if (JumpIn)
+                break;
+
+            if (Unknown2_2)
+            {
+                LDR_DDAG_NODE* DdagNode3 = (LDR_DDAG_NODE*)DdagNode->Modules.Flink;
+                *Unknown = 1;
+                LDR_SERVICE_TAG_RECORD* ServiceTagList = DdagNode3->ServiceTagList;
+                if (ServiceTagList)
+                {
+                    if (pStatus != *(NTSTATUS**)&ServiceTagList[2].ServiceTag)
+                        return STATUS_SUCCESS;
+                }
+            }
+        }
+    } while (FALSE);
+
+    if (!JumpIn)
+        Status = fLdrpInitializeNode(DdagNode);
+
+    if (JumpIn || !NT_SUCCESS(Status))
+        DdagNode->State = LdrModulesInitError;
+
+    return Status;
+}
+```
+Does some prior check on the upper area of the function if our DdagNode had dependencies (in our loading case it doesn't so we skip over all the do-while loop), checks for errors and if there are any, sets the state to failed and returns. Otherwise (our case) continues on by calling LdrpInitializeNode.
+<br>
+## LdrpInitializeNode
+```cpp
+NTSTATUS __fastcall LOADLIBRARY::fLdrpInitializeNode(LDR_DDAG_NODE* DdagNode)
+{
+    NTSTATUS Status;
+    NTSTATUS Status_2;
+    NTSTATUS Status_3;
+
+    LDR_DDAG_STATE* pState = &DdagNode->State;
+
+    UNICODE_STRING FullDllName;
+    *(UINT_PTR*)&FullDllName.Length = (UINT_PTR)&DdagNode->State;
+    DdagNode->State = LdrModulesInitializing;
+
+    LDR_DATA_TABLE_ENTRY* Blink = (LDR_DATA_TABLE_ENTRY*)DdagNode->Modules.Blink;
+    LDR_DATA_TABLE_ENTRY* LdrEntry = *LdrpImageEntry;
+    UINT_PTR** v4 = (UINT_PTR**)*qword_1843B8;
+    while (Blink != (LDR_DATA_TABLE_ENTRY*)DdagNode)
+    {
+        if (&Blink[-1].DdagNode != (LDR_DDAG_NODE**)LdrEntry)
+        {
+            PVOID* p_ParentDllBase = &Blink[-1].ParentDllBase;
+            if (*v4 != qword_1843B0)
+                __fastfail(3u);
+
+            *p_ParentDllBase = qword_1843B0;
+            Blink[-1].SwitchBackContext = v4;
+            *v4 = (UINT_PTR*)p_ParentDllBase;
+            v4 = (UINT_PTR**)&Blink[-1].ParentDllBase;
+            *qword_1843B8 = (UINT_PTR**)v4;
+        }
+
+        Blink = (LDR_DATA_TABLE_ENTRY*)Blink->InLoadOrderLinks.Blink;
+    }
+
+    Status = STATUS_SUCCESS;
+    for (LDR_DATA_TABLE_ENTRY* i = (LDR_DATA_TABLE_ENTRY*)DdagNode->Modules.Blink; i != (LDR_DATA_TABLE_ENTRY*)DdagNode; i = (LDR_DATA_TABLE_ENTRY*)i->InLoadOrderLinks.Blink)
+    {
+        LDR_DATA_TABLE_ENTRY* LdrEntry_2 = (LDR_DATA_TABLE_ENTRY*)((char*)i - 160);
+        if (&i[-1].DdagNode != (LDR_DDAG_NODE**)LdrEntry)
+        {
+            if (LdrEntry_2->LoadReason == LoadReasonPatchImage)
+            {
+                Status_2 = LdrpApplyPatchImage((PLDR_DATA_TABLE_ENTRY)&i[-1].DdagNode);
+                Status = Status_2;
+                if (!NT_SUCCESS(Status_2))
+                {
+                    FullDllName = LdrEntry_2->FullDllName;
+                    Status_3 = Status_2;
+                    WID_HIDDEN( LdrpLogInternal("minkernel\\ntdll\\ldrsnap.c", 1392, "LdrpInitializeNode", 0, "Applying patch \"%wZ\" failed - Status = 0x%x\n", &FullDllName, *(UINT_PTR*)&Status_3); )
+                    break;
+                }
+            }
+
+            UINT_PTR CurrentDllIniter = *LdrpCurrentDllInitializer;
+            *LdrpCurrentDllInitializer = (UINT_PTR)&i[-1].DdagNode;
+            PVOID EntryPoint = LdrEntry_2->EntryPoint;
+            PUNICODE_STRING pFullDllName = &LdrEntry_2->FullDllName;
+            WID_HIDDEN( LdrpLogInternal("minkernel\\ntdll\\ldrsnap.c", 1411, "LdrpInitializeNode", 2u, "Calling init routine %p for DLL \"%wZ\"\n", EntryPoint, &LdrEntry_2->FullDllName); )
+            
+            RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_EXTENDED StackFrameExtended;
+            StackFrameExtended.Size = 0x48;
+            StackFrameExtended.Format = 1;
+            memset((char*)&StackFrameExtended.Frame.Previous + 4, 0, 48);
+            UINT_PTR v20 = 0;
+            RtlActivateActivationContextUnsafeFast(&StackFrameExtended, LdrEntry_2->EntryPointActivationContext);
+            if (LdrEntry_2->TlsIndex)
+                fLdrpCallTlsInitializers(1i64, (LDR_DATA_TABLE_ENTRY*)&i[-1].DdagNode);
+
+            BOOLEAN CallSuccess = TRUE;
+            if (EntryPoint)
+            {
+                LPVOID ContextRecord = nullptr;
+                if ((LdrEntry_2->FlagGroup[0] & ProcessStaticImport) != 0)
+                    ContextRecord = *LdrpProcessInitContextRecord;
+
+                CallSuccess = fLdrpCallInitRoutine((BOOL(__stdcall*)(HINSTANCE, DWORD, LPVOID))EntryPoint, LdrEntry_2->DllBase, DLL_PROCESS_ATTACH, ContextRecord);
+            }
+
+            RtlDeactivateActivationContextUnsafeFast(&StackFrameExtended);
+            *LdrpCurrentDllInitializer = CurrentDllIniter;
+            LdrEntry_2->Flags |= ProcessAttachCalled;
+            if (!CallSuccess)
+            {
+                WID_HIDDEN( LdrpLogInternal("minkernel\\ntdll\\ldrsnap.c", 0x5B7, "LdrpInitializeNode", 0, "Init routine %p for DLL \"%wZ\" failed during DLL_PROCESS_ATTACH\n", EntryPoint, pFullDllName); )
+                Status = STATUS_DLL_INIT_FAILED;
+                LdrEntry_2->Flags |= ProcessAttachFailed;
+                break;
+            }
+
+            WID_HIDDEN( LdrpLogDllState((UINT_PTR)LdrEntry_2->DllBase, pFullDllName, 0x14AEu); )
+            LdrEntry = *LdrpImageEntry;
+        }
+    }
+    *pState = Status != 0 ? LdrModulesInitError : LdrModulesReadyToRun;
+    return Status;
+}
+```
+Sets the state to initializing, goes on by checking if it's purpose is to patch the image (not in our case), if it is, it patches the image by calling LdrpApplyPatchImage, if it's not it goes on by calling LdrpCallTlsInitializers which is self explanatory and finally it calls LdrpCallInitRoutine.
+<br>
+## LdrpCallInitRoutine
+```cpp
+BOOLEAN __fastcall LOADLIBRARY::fLdrpCallInitRoutine(BOOL(__fastcall* DllMain)(HINSTANCE hInstDll, DWORD fdwReason, LPVOID lpvReserved), PIMAGE_DOS_HEADER DllBase, unsigned int One, LPVOID ContextRecord)
+{
+    BOOLEAN ReturnVal = TRUE;
+
+    PCHAR LoggingVar = (PCHAR)&kUserSharedData->UserModeGlobalLogger[2];
+    PCHAR LoggingVar2 = 0;
+    if (RtlGetCurrentServiceSessionId())
+        LoggingVar2 = (PCHAR)&NtCurrentPeb()->SharedData->NtSystemRoot[253];
+    else
+        LoggingVar2 = (PCHAR)&kUserSharedData->UserModeGlobalLogger[2];
+
+    PCHAR LoggingVar3 = 0;
+    PCHAR LoggingVar4 = 0;
+    if (*LoggingVar2 && (NtCurrentPeb()->TracingFlags & LibLoaderTracingEnabled) != 0)
+    {
+        LoggingVar3 = (PCHAR)&kUserSharedData->UserModeGlobalLogger[2] + 1;
+        if (RtlGetCurrentServiceSessionId())
+            LoggingVar4 = (char*)&NtCurrentPeb()->SharedData->NtSystemRoot[253] + 1;
+        else
+            LoggingVar4 = (PCHAR)&kUserSharedData->UserModeGlobalLogger[2] + 1;
+
+        // 0x20 is SPACE char.
+        if ((*LoggingVar4 & ' ') != 0)
+            WID_HIDDEN( LdrpLogEtwEvent(0x14A3u, (ULONGLONG)DllBase, 0xFF, 0xFF); )
+    }
+    else
+    {
+        LoggingVar3 = (PCHAR)&kUserSharedData->UserModeGlobalLogger[2] + 1;
+    }
+
+    // DLL_PROCESS_ATTACH (1)
+    ReturnVal = DllMain((HINSTANCE)DllBase, One, ContextRecord);
+    if (RtlGetCurrentServiceSessionId())
+        LoggingVar = (PCHAR)&NtCurrentPeb()->SharedData->NtSystemRoot[253];
+
+    if (*LoggingVar && (NtCurrentPeb()->TracingFlags & LibLoaderTracingEnabled) != 0)
+    {
+        if (RtlGetCurrentServiceSessionId())
+            LoggingVar3 = (char*)&NtCurrentPeb()->SharedData->NtSystemRoot[253] + 1;
+
+        // 0x20 is SPACE char.
+        if ((*LoggingVar3 & ' ') != 0)
+            WID_HIDDEN( LdrpLogEtwEvent(0x1496u, (ULONGLONG)DllBase, 0xFF, 0xFF); )
+    }
+
+    ULONG LoggingVar5 = 0;
+    if (!ReturnVal && One == 1)
+    {
+        LoggingVar5 = 1;
+        WID_HIDDEN( LdrpLogError(STATUS_DLL_INIT_FAILED, 0x1496u, LoggingVar5, 0i64); )
+    }
+
+    return ReturnVal;
+}
+```
+Does prior checks and calls DllMain which finishes the loading process.
