@@ -7,23 +7,32 @@
 
 The purpose of these series are **only** to understand Windows better, there is a lot to discover.
 
-# Information
-There will be some terms I use you may not understand, so I wanted to explain them in here first.
-
+# Information <a href="https://discord.gg/9qe38utdBJ" target="blank"><img align="center" src="https://raw.githubusercontent.com/rahuldkjain/github-profile-readme-generator/master/src/images/icons/Social/discord.svg" alt="9qe38utdBJ" height="40" width="40"></a>
 ### Functions
-All the function implementations given below are my own, they are not guaranteed to represent the exact functionality.
+All the function implementations given are my own, they are not guaranteed to represent the exact functionality.
 
 ### Levels
 The depth level (it's what I say) of the functions, as the level get higher, the functions get less documented and harder to understand.
-<br><br><br>
-<a href="https://discord.gg/9qe38utdBJ" target="blank"><img align="center" src="https://raw.githubusercontent.com/rahuldkjain/github-profile-readme-generator/master/src/images/icons/Social/discord.svg" alt="9qe38utdBJ" height="30" width="30" /></a> [Discord](https://discord.gg/9qe38utdBJ "For other questions etc.")
+
+# Usage
+Pretty easy, you first include "WID.h" into your source file. Then you create a LOADLIBRARY instance with a path given, and that's it. Now you can almost see the entire loading process!
+```cpp
+#include "WID.h"
+
+using namespace WID::Loader;
+
+int main()
+{
+    LOADLIBRARY LoadDll(TEXT("PATH_TO_DLL.dll"));
+}
+```
 
 <hr>
 
 # What is LoadLibrary?
-LoadLibrary is a Windows API function used for loading modules into programs.
+LoadLibrary is an easy to use Windows API function for loading Dynamic Link Libraries (DLLs) into programs.
 
-The usage is pretty simple, you include Windows.h into your project, then you can use it.
+To be able to use it you must first include <Windows.h> into your source file.
 
 There are 4 widely used LoadLibrary functions
 - [LoadLibraryA](https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-loadlibrarya "MSDN Reference")
@@ -43,10 +52,7 @@ Here is a basic diagram to show what functions are called in order to load a mod
 <img src="https://github.com/paskalian/WID_LoadLibrary/blob/main/Images/Diagram.svg" alt="Diagram"/>
 </p>
 
-Now that it may look confusing, but I will try to explain each function one by one.
-
-<hr>
-
+# Basic Explanations
 ## LoadLibrary
 ```cpp
 #ifdef UNICODE
@@ -354,3 +360,497 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpLoadDll(PUNICODE_STRING DllName, LDR_UNKST
 }
 ```
 A fairly smaller one than the last, the main purpose of it is to divide our path given into meaningful parts by LdrpPreprocessDllName then calling LdrpLoadDllInternal using that.
+<br>
+## LdrpLoadDllInternal
+```cpp
+NTSTATUS __fastcall LOADLIBRARY::fLdrpLoadDllInternal(PUNICODE_STRING FullPath, LDR_UNKSTRUCT* DllPathInited, ULONG Flags, ULONG LdrFlags, PLDR_DATA_TABLE_ENTRY LdrEntry, PLDR_DATA_TABLE_ENTRY LdrEntry2, PLDR_DATA_TABLE_ENTRY* DllEntry, NTSTATUS* pStatus, ULONG Zero)
+{
+    NTSTATUS Status;
+
+    // NOTES:
+    // I assumed that LdrFlags (which was sent as 0x4 (ImageDll) by LdrpLoadDll) is the same flags inside LDR_DATA_TABLE_ENTRY.
+    // LdrEntry & LdrEntry2 were both sent as 0s by LdrpLoadDll.
+    // 
+    // Instead of using gotos which causes the local variables to be initialized in the start of the function (making it look not good in my opinion)
+    // I created a do-while loop. The outcome won't be affected.
+    //
+    // MOST FLAGS = CONVERTED_DONT_RESOLVE_DLL_REFERENCES (0x2) | LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE (0x40) | LOAD_LIBRARY_REQUIRE_SIGNED_TARGET (0x80)
+    // LOAD_LIBRARY_SEARCH_APPLICATION_DIR (0x200) | LOAD_LIBRARY_SEARCH_USER_DIRS (0x400)
+
+    WID_HIDDEN(LdrpLogInternal("minkernel\\ntdll\\ldrapi.c", 0x379, "LdrpLoadDllInternal", 3, "DLL name: %wZ\n", FullPath); )
+
+    bool IsWorkerThread = false;
+    do
+    {
+        *DllEntry = 0;
+        LdrEntry = LdrEntry2;
+
+        // This will go in.
+        if (LdrFlags != (PackagedBinary | LoadNotificationsSent))
+        {
+            // This function does some prior setup, incrementing the module load count is done inside here.
+            Status = LdrpFastpthReloadedDll(FullPath, Flags, LdrEntry2, DllEntry); // returns STATUS_DLL_NOT_FOUND in normal circumstances.
+
+            // If not an actual nt success (excludes warnings)
+            if (!(NT_SUCCESS((int)(Status + 0x80000000))) || Status == STATUS_IMAGE_LOADED_AS_PATCH_IMAGE)
+            {
+                *pStatus = Status;
+                break;
+            }
+        }
+
+        IsWorkerThread = ((NtCurrentTeb()->SameTebFlags & LoadOwner) == 0);
+        if (IsWorkerThread)
+            LdrpDrainWorkQueue(WaitLoadComplete);
+
+        // This won't go in so we can ignore it. I still did simplifying though.
+        // Because the LdrFlags was sent 0x4 (ImageDll), we can ignore this one.
+        if (LdrFlags == (PackagedBinary | LoadNotificationsSent))
+        {
+            Status = LdrpFindLoadedDllByHandle(Zero, &LdrEntry, 0);
+            if (!NT_SUCCESS(Status))
+            {
+                if (FullPath->Buffer)
+                    LdrpFreeUnicodeString(FullPath);
+
+                *pStatus = Status;
+                if (IsWorkerThread)
+                    LdrpDropLastInProgressCount();
+                break;
+            }
+
+            if (LdrEntry->HotPatchState == LdrHotPatchFailedToPatch)
+            {
+                Status = STATUS_PATCH_CONFLICT;
+
+                // goto FREE_DLLNAMEPREPROCANDRETURN;
+                if (FullPath->Buffer)
+                    LdrpFreeUnicodeString(FullPath);
+
+                *pStatus = Status;
+                if (IsWorkerThread)
+                    LdrpDropLastInProgressCount();
+                break;
+            }
+
+            Status = LdrpQueryCurrentPatch(LdrEntry->CheckSum, LdrEntry->TimeDateStamp, FullPath);
+            if (!NT_SUCCESS(Status))
+            {
+                // goto FREE_DLLNAMEPREPROCANDRETURN;
+                if (FullPath->Buffer)
+                    LdrpFreeUnicodeString(FullPath);
+
+                *pStatus = Status;
+                if (IsWorkerThread)
+                    LdrpDropLastInProgressCount();
+                break;
+            }
+
+            if (!FullPath->Length)
+            {
+                if (LdrEntry->ActivePatchImageBase)
+                    Status = LdrpUndoPatchImage(LdrEntry);
+
+                // goto FREE_DLLNAMEPREPROCANDRETURN;
+                if (FullPath->Buffer)
+                    LdrpFreeUnicodeString(FullPath);
+
+                *pStatus = Status;
+                if (IsWorkerThread)
+                    LdrpDropLastInProgressCount();
+
+                break;
+            }
+
+            // LdrpLogInternal("minkernel\\ntdll\\ldrapi.c", 0x3FA, "LdrpLoadDllInternal", 2u, &::LdrEntry[232], FullPath);
+            WID_HIDDEN( LdrpLogInternal("minkernel\\ntdll\\ldrapi.c", 0x3FA, "LdrpLoadDllInternal", 2, "Loading patch image: %wZ\n", FullPath); )
+        }
+
+        // Opens a token to the current thread and sets GLOBAL variable LdrpMainThreadToken with that token.
+        LdrpThreadTokenSetMainThreadToken(); // returns STATUS_NO_TOKEN in normal circumstances.
+
+        LDR_DATA_TABLE_ENTRY* pLdrEntryLoaded = 0;
+        // This will go in by the first check LdrEntry2 because it was sent as 0 in LdrpLoadDll.
+        if (!LdrEntry || !IsWorkerThread || LdrEntry->DdagNode->LoadCount)
+        {
+            // I checked the function, it detects a hook by byte scanning these following functions;
+            // • ntdll!NtOpenFile
+            // • ntdll!NtCreateSection
+            // • ntdll!ZqQueryAttributes
+            // • ntdll!NtOpenSection
+            // • ntdll!ZwMapViewOfSection
+            // Resulting in the global variable LdrpDetourExist to be set if there's a hook, didn't checked what's done with it though.
+            LdrpDetectDetour();
+
+            // [IGNORE THIS] Finds the module, increments the loaded module count. [IGNORE THIS]
+            // [IGNORE THIS] It can go to another direction if the Flag LOAD_LIBRARY_SEARCH_APPLICATION_DIR was set, but that couldn't be set coming from LoadLibraryExW. [IGNORE THIS]
+            // If LoadLibrary was given an absolute path, Flags will have LOAD_LIBRARY_SEARCH_APPLICATION_DIR causing this function to call LdrpLoadKnownDll.
+            // In our case LdrpFindOrPrepareLoadingModule actually returns STATUS_DLL_NOT_FOUND, which I thought was a bad thing but after checking up inside
+            // inside LdrpProcessWork it didn't looked that bad.
+            // So our dll loading part is actually inside LdrpProcessWork (for calling LoadLibraryExW with an absolute path and 0 flags at least)
+
+            //Status = LdrpFindOrPrepareLoadingModule(FullPath, DllPathInited, Flags, LdrFlags, LdrEntry, &pLdrEntryLoaded, pStatus);
+            Status = LdrpFindOrPrepareLoadingModule(FullPath, DllPathInited, Flags, LdrFlags, LdrEntry, &pLdrEntryLoaded, pStatus);
+            if (Status == STATUS_DLL_NOT_FOUND)
+                // Even if the DllMain call succeeds, there's still runtime bugs on the dll side, like the dll not being able to unload itself and such. So I still got
+                // a lot of work to do.
+                fLdrpProcessWork(pLdrEntryLoaded->LoadContext, TRUE);
+            else if (Status != STATUS_RETRY && !NT_SUCCESS(Status))
+                *pStatus = Status;
+        }
+        else
+        {
+            *pStatus = STATUS_DLL_NOT_FOUND;
+        }
+
+        LdrpDrainWorkQueue(WaitWorkComplete);
+
+        if (*LdrpMainThreadToken)
+            // Closes the token handle, and sets GLOBAL variable LdrpMainThreadToken to 0.
+            LdrpThreadTokenUnsetMainThreadToken();
+
+        if (pLdrEntryLoaded)
+        {
+            *DllEntry = LdrpHandleReplacedModule(pLdrEntryLoaded);
+            if (pLdrEntryLoaded != *DllEntry)
+            {
+                LdrpFreeReplacedModule(pLdrEntryLoaded);
+                pLdrEntryLoaded = *DllEntry;
+                if (pLdrEntryLoaded->LoadReason == LoadReasonPatchImage && LdrFlags != (PackagedBinary | LoadNotificationsSent))
+                    *pStatus = STATUS_IMAGE_LOADED_AS_PATCH_IMAGE;
+            }
+
+            if (pLdrEntryLoaded->LoadContext)
+                LdrpCondenseGraph(pLdrEntryLoaded->DdagNode);
+
+            if (NT_SUCCESS(*pStatus))
+            {
+                // [IGNORE THIS] In here I realized that the module must have already been loaded to be prepared for execution.
+                // [IGNORE THIS] So I've gone a little back and realized the actual loading was done in the LdrpDrainWorkQueue function.
+                // Doing more research revealed it was inside LdrpProcessWork after LdrpFindOrPrepareLoadingModule returning STATUS_DLL_NOT_FOUND.
+
+                Status = fLdrpPrepareModuleForExecution(pLdrEntryLoaded, pStatus);
+                *pStatus = Status;
+                if (NT_SUCCESS(Status))
+                {
+                    Status = LdrpBuildForwarderLink(LdrEntry, pLdrEntryLoaded);
+                    *pStatus = Status;
+                    if (NT_SUCCESS(Status) && !*LdrInitState)
+                        LdrpPinModule(pLdrEntryLoaded);
+                }
+
+                // Because the LdrFlags was sent 0x4 (ImageDll), we can ignore this one too.
+                if (LdrFlags == (PackagedBinary | LoadNotificationsSent) && LdrEntry->ActivePatchImageBase != pLdrEntryLoaded->DllBase)
+                {
+                    if (pLdrEntryLoaded->HotPatchState == LdrHotPatchFailedToPatch)
+                    {
+                        *pStatus = STATUS_DLL_INIT_FAILED;
+                    }
+                    else
+                    {
+                        Status = LdrpApplyPatchImage(pLdrEntryLoaded);
+                        *pStatus = Status;
+                        if (!NT_SUCCESS(Status))
+                        {
+                            //UNICODE_STRING Names[4];
+                            //Names[0] = pLdrEntryLoaded->FullDllName;
+                            //WID_HIDDEN( LdrpLogInternal("minkernel\\ntdll\\ldrapi.c", 0x4AF, "LdrpLoadDllInternal", 0, "Applying patch \"%wZ\" failed\n", Names); )
+                            WID_HIDDEN( LdrpLogInternal("minkernel\\ntdll\\ldrapi.c", 0x4AF, "LdrpLoadDllInternal", 0, "Applying patch \"%wZ\" failed\n", pLdrEntryLoaded->FullDllName); )
+                        }
+                    }
+                }
+            }
+            LdrpFreeLoadContextOfNode(pLdrEntryLoaded->DdagNode, pStatus);
+            if (!NT_SUCCESS(*pStatus) && (LdrFlags != (PackagedBinary | LoadNotificationsSent) || pLdrEntryLoaded->HotPatchState != LdrHotPatchAppliedReverse))
+            {
+                *DllEntry = 0;
+                LdrpDecrementModuleLoadCountEx(pLdrEntryLoaded, 0);
+                LdrpDereferenceModule(pLdrEntryLoaded);
+            }
+        }
+        else
+        {
+            *pStatus = STATUS_NO_MEMORY;
+        }
+    } while (FALSE);
+
+    // LoadNotificationsSent (0x8) | PackagedBinary (0x1)
+    // Because the LdrFlags was sent 0x4 (ImageDll), we can ignore this one too.
+    if (LdrFlags == (LoadNotificationsSent | PackagedBinary) && LdrEntry)
+        LdrpDereferenceModule(LdrEntry);
+
+    // Actually returns what LdrpLogInternal returns.
+    WID_HIDDEN( LdrpLogInternal("minkernel\\ntdll\\ldrapi.c", 0x52E, "LdrpLoadDllInternal", 4, "Status: 0x%08lx\n", *pStatus); )
+    return *pStatus;
+}
+```
+The main course of action of this function is to check whether the dll was already loaded and waiting to be executed, or is going to be patched, or a new dll is going to be loaded, if it's a new dll (which is our case) it first goes by LdrpProcessWork to start the mapping process, then after that call succeeds goes on by LdrpPrepareModuleForExecution to execute the mapped dll.
+<br>
+## LdrpProcessWork
+```cpp
+NTSTATUS __fastcall LOADLIBRARY::fLdrpProcessWork(PLDRP_LOAD_CONTEXT LoadContext, BOOLEAN IsLoadOwner)
+{
+    NTSTATUS Status;
+
+    // Converted goto to do-while loop.
+    do
+    {
+        Status = *LoadContext->pStatus;
+        if (!NT_SUCCESS(Status))
+            break;
+
+        // Caused most likely because CONTAINING_RECORD macro was used, I have no idea what's going on.
+        // Also the structure used (LDRP_LOAD_CONTEXT) isn't documented, that's what I've got out of it so far.
+        if ((UINT_PTR)LoadContext->WorkQueueListEntry.Flink[9].Blink[3].Blink & UINT_MAX)
+        {
+            Status = fLdrpSnapModule(LoadContext);
+        }
+        else
+        {
+            if (LoadContext->Flags & 0x100000)
+            {
+                Status = fLdrpMapDllRetry(LoadContext);
+            }
+            // We will continue from here since we have the LOAD_LIBRARY_SEARCH_APPLICATION_DIR flag, and also the function name is exactly representing
+            // what we are expecting to happen.
+            else if (LoadContext->Flags & LOAD_LIBRARY_SEARCH_APPLICATION_DIR)
+            {
+                Status = fLdrpMapDllFullPath(LoadContext);
+            }
+            else
+            {
+                Status = fLdrpMapDllSearchPath(LoadContext);
+            }
+            if (NT_SUCCESS(Status) || Status == STATUS_RETRY)
+                break;
+
+            WID_HIDDEN( Status = LdrpLogInternal("minkernel\\ntdll\\ldrmap.c", 0x7D2, "LdrpProcessWork", 0, "Unable to load DLL: \"%wZ\", Parent Module: \"%wZ\", Status: 0x%x\n", LoadContext, ((UINT_PTR)&LoadContext->Entry->FullDllName & (UINT_PTR)LoadContext->Entry >> 64), Status); )
+            // This part is for failed cases so we can ignore it.
+            if (Status == STATUS_DLL_NOT_FOUND)
+            {
+                WID_HIDDEN( LdrpLogError(STATUS_DLL_NOT_FOUND, 0x19, 0, LoadContext); )
+                WID_HIDDEN( LdrpLogDeprecatedDllEtwEvent(LoadContext); )
+                WID_HIDDEN( LdrpLogLoadFailureEtwEvent((PVOID)LoadContext, (PVOID)(((UINT_PTR)(LoadContext->Entry->EntryPointActivationContext) & ((UINT_PTR)(LoadContext->Entry) >> 64))), STATUS_DLL_NOT_FOUND, LoadFailure, 0); )
+
+                //PLDR_DATA_TABLE_ENTRY DllEntry = (PLDR_DATA_TABLE_ENTRY)LoadContext->WorkQueueListEntry.Flink;
+                LDR_DATA_TABLE_ENTRY* DllEntry = CONTAINING_RECORD(LoadContext->WorkQueueListEntry.Flink, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+                if (DllEntry->FlagGroup[0] & ProcessStaticImport)
+                {
+                    WID_HIDDEN( Status = LdrpReportError(LoadContext, 0, STATUS_DLL_NOT_FOUND); )
+                }
+            }
+        }
+        if (!NT_SUCCESS(Status))
+        {
+            *LoadContext->pStatus = Status;
+        }
+    } while (FALSE);
+
+    if (!IsLoadOwner)
+    {
+        bool SetWorkCompleteEvent;
+
+        RtlEnterCriticalSection(LdrpWorkQueueLock);
+        --(*LdrpWorkInProgress);
+        if (*LdrpWorkQueue != (LIST_ENTRY*)LdrpWorkQueue || (SetWorkCompleteEvent = TRUE, *LdrpWorkInProgress != 1))
+            SetWorkCompleteEvent = FALSE;
+        Status = RtlLeaveCriticalSection(LdrpWorkQueueLock);
+        if (SetWorkCompleteEvent)
+            Status = ZwSetEvent(*LdrpWorkCompleteEvent, 0);
+    }
+
+    return Status;
+}
+```
+Goes in an according direction depending by the path type given, in our case we have an absolute path, so we continue by LdrpMapDllFullPath.
+<br>
+## LdrpMapDllFullPath
+```cpp
+NTSTATUS __fastcall LOADLIBRARY::fLdrpMapDllFullPath(PLDRP_LOAD_CONTEXT LoadContext)
+{
+    NTSTATUS Status;
+    
+    //LDR_DATA_TABLE_ENTRY* DllEntry = (LDR_DATA_TABLE_ENTRY*)LoadContext->WorkQueueListEntry.Flink;
+    LDR_DATA_TABLE_ENTRY* DllEntry = CONTAINING_RECORD(LoadContext->WorkQueueListEntry.Flink, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+    LDRP_FILENAME_BUFFER FileNameBuffer;    
+
+    FileNameBuffer.pFileName.Buffer = FileNameBuffer.FileName;
+    FileNameBuffer.pFileName.Length = 0;
+    FileNameBuffer.pFileName.MaximumLength = MAX_PATH - 4;
+    FileNameBuffer.FileName[0] = 0;
+
+    // Sets the according members of the DllEntry
+    Status = LdrpResolveDllName(LoadContext, &FileNameBuffer, &DllEntry->BaseDllName, &DllEntry->FullDllName, LoadContext->Flags);
+    do
+    {
+        if (LoadContext->UnknownPtr)
+        {
+            if (!NT_SUCCESS(Status))
+                break;
+        }
+        else
+        {
+            Status = LdrpAppCompatRedirect(LoadContext, &DllEntry->FullDllName, &DllEntry->BaseDllName, &FileNameBuffer, Status);
+            if (!NT_SUCCESS(Status))
+                break;
+
+            // Hashes the dll name
+            ULONG BaseDllNameHash = LdrpHashUnicodeString(&DllEntry->BaseDllName);
+            DllEntry->BaseNameHashValue = BaseDllNameHash;
+
+            LDR_DATA_TABLE_ENTRY* LoadedDll = nullptr;
+
+            // Most likely checks if the dll was already mapped/loaded.
+            LdrpFindExistingModule(&DllEntry->BaseDllName, &DllEntry->FullDllName, LoadContext->Flags, BaseDllNameHash, &LoadedDll);
+            if (LoadedDll)
+            {
+                LdrpLoadContextReplaceModule(LoadContext, LoadedDll);
+                break;
+            }
+        }
+
+        // After this function the dll is mapped.
+        Status = fLdrpMapDllNtFileName(LoadContext, &FileNameBuffer);
+        if (Status == STATUS_IMAGE_MACHINE_TYPE_MISMATCH)
+            Status = STATUS_INVALID_IMAGE_FORMAT;
+    } while (FALSE);
+
+    if (FileNameBuffer.FileName != FileNameBuffer.pFileName.Buffer)
+        NtdllpFreeStringRoutine(FileNameBuffer.pFileName.Buffer);
+
+    return Status;
+}
+```
+Sets up a LDRP_FILENAME_BUFFER structure, basically representing each portion of a path (base part, absolute part, etc.), hashes the **base** dll name and checks if it was already loaded, if it's not (our case) it goes on by calling LdrpMapDllNtFileName.
+<br>
+## LdrpMapDllNtFileName
+```cpp
+NTSTATUS __fastcall LOADLIBRARY::fLdrpMapDllNtFileName(PLDRP_LOAD_CONTEXT LoadContext, LDRP_FILENAME_BUFFER* FileNameBuffer) // CHECKED.
+{
+    NTSTATUS Status;
+
+    //LDR_DATA_TABLE_ENTRY* DllEntry = (LDR_DATA_TABLE_ENTRY*)LoadContext->WorkQueueListEntry.Flink;
+    LDR_DATA_TABLE_ENTRY* DllEntry = CONTAINING_RECORD(LoadContext->WorkQueueListEntry.Flink, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+    INT64 UnknownPtr = LoadContext->UnknownPtr;
+    LONG Unknown = 0;
+    if (LdrpCheckForRetryLoading(LoadContext, 0))
+        return STATUS_RETRY;
+
+    PUNICODE_STRING FullDllName = &DllEntry->FullDllName;
+    WID_HIDDEN( LdrpLogDllState((ULONGLONG)DllEntry->DllBase, &DllEntry->FullDllName, 0x14A5); )
+    //OBJ_CASE_INSENSITIVE 
+    ULONG ObjAttributes = OBJ_CASE_INSENSITIVE;
+    if (!*LdrpUseImpersonatedDeviceMap)
+        ObjAttributes = (OBJ_IGNORE_IMPERSONATED_DEVICEMAP | OBJ_CASE_INSENSITIVE);
+
+    OBJECT_ATTRIBUTES ObjectAttributes;
+    ObjectAttributes.Length = 0x30;
+    ObjectAttributes.RootDirectory = 0;
+    ObjectAttributes.Attributes = ObjAttributes;
+    ObjectAttributes.ObjectName = &FileNameBuffer->pFileName;
+    ObjectAttributes.SecurityDescriptor = 0;
+    ObjectAttributes.SecurityQualityOfService = 0;
+
+    PCHAR NtPathStuff = (PCHAR)&kUserSharedData->UserModeGlobalLogger[2];
+    PCHAR Unknown2 = 0;
+    if (RtlGetCurrentServiceSessionId())
+        Unknown2 = (PCHAR)&NtCurrentPeb()->SharedData->NtSystemRoot[253];
+    else
+        Unknown2 = (PCHAR)&kUserSharedData->UserModeGlobalLogger[2];
+
+    PCHAR NtPathStuff2 = (PCHAR)&kUserSharedData->UserModeGlobalLogger[2] + 1;
+    if (*Unknown2 && (NtCurrentPeb()->TracingFlags & LibLoaderTracingEnabled))
+    {
+        //: (char*)0x7FFE0385;
+        PCHAR NtPathStuff3 = RtlGetCurrentServiceSessionId() ? (PCHAR)&NtCurrentPeb()->SharedData->NtSystemRoot[253] + 1 : (PCHAR)&kUserSharedData->UserModeGlobalLogger[2] + 1;
+            
+        // 0x20 is SPACE char
+        if ((*NtPathStuff3 & ' '))
+            LdrpLogEtwEvent(0x1485, -1, 0xFFu, 0xFFu);
+    }
+
+    // SYSTEM_FLAGS_INFORMATION
+    if ((NtCurrentPeb()->NtGlobalFlag & FLG_ENABLE_KDEBUG_SYMBOL_LOAD))
+    {
+        WID_HIDDEN( ZwSystemDebugControl(); )
+    }
+
+    HANDLE FileHandle;
+    while (TRUE)
+    {    
+        IO_STATUS_BLOCK IoStatusBlock;    
+        Status = NtOpenFile(&FileHandle, SYNCHRONIZE | FILE_TRAVERSE | FILE_LIST_DIRECTORY, &ObjectAttributes, &IoStatusBlock, 5, 0x60);
+        if (NT_SUCCESS(Status))
+            break;
+
+        if (Status == STATUS_OBJECT_NAME_NOT_FOUND || Status == STATUS_OBJECT_PATH_NOT_FOUND)
+            return STATUS_DLL_NOT_FOUND;
+
+        if (Status != STATUS_ACCESS_DENIED || Unknown || !LdrpCheckComponentOnDemandEtwEvent(LoadContext))
+            return Status;
+
+        Unknown = TRUE;
+    }
+
+    ULONG SigningLevel;
+    ULONG AllocationAttributes = 0;
+    if    (*LdrpAuditIntegrityContinuity && (Status = LdrpValidateIntegrityContinuity(LoadContext, FileHandle), !NT_SUCCESS(Status)) && *LdrpEnforceIntegrityContinuity || 
+        (AllocationAttributes = MEM_IMAGE, (LoadContext->Flags & MEM_IMAGE)) && (NtCurrentPeb()->BitField & IsPackagedProcess) == 0 &&
+      // (Status = LdrpSetModuleSigningLevel(FileHandle, (PLDR_DATA_TABLE_ENTRY)LoadContext->WorkQueueListEntry.Flink, &SigningLevel, 8), !NT_SUCCESS(Status)))
+        (Status = LdrpSetModuleSigningLevel(FileHandle, CONTAINING_RECORD(LoadContext->WorkQueueListEntry.Flink, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks), &SigningLevel, 8), !NT_SUCCESS(Status)))
+    {
+        NtClose(FileHandle);
+        return Status;
+    }
+
+    if (*UseWOW64 && (LoadContext->Flags & 0x800) == 0)
+        AllocationAttributes = MEM_IMAGE | MEM_TOP_DOWN;
+
+    HANDLE SectionHandle;
+    Status = NtCreateSection(&SectionHandle, SECTION_QUERY | SECTION_MAP_READ | SECTION_MAP_EXECUTE, 0, 0, PAGE_EXECUTE, AllocationAttributes, FileHandle);
+    if (!NT_SUCCESS(Status))
+    {
+        if (Status == STATUS_NEEDS_REMEDIATION || (Status + 0x3FFFFB82) <= 1)
+        {
+            Status = LdrAppxHandleIntegrityFailure(Status);
+        }
+        else if (Status != STATUS_NO_MEMORY && Status != STATUS_INSUFFICIENT_RESOURCES && Status != STATUS_COMMITMENT_LIMIT)
+        {
+            LDR_UNKSTRUCT2 NtHardParameters;
+            NtHardParameters.Name = FullDllName;
+            NtHardParameters.Status = Status;
+            // Semi-documented in http://undocumented.ntinternals.net/
+            HARDERROR_RESPONSE Response;
+            if (NT_SUCCESS(NtRaiseHardError(STATUS_INVALID_IMAGE_FORMAT, 2, 1, (INT*)&NtHardParameters, OptionOk, &Response)) && *LdrInitState != 3)
+            {
+                ++(*LdrpFatalHardErrorCount);
+            }
+        }
+        WID_HIDDEN( LdrpLogError(Status, 0x1485u, 0, FullDllName); )
+        NtClose(FileHandle);
+        return Status;
+    }
+    if (RtlGetCurrentServiceSessionId())
+        NtPathStuff = (PCHAR)&NtCurrentPeb()->SharedData->NtSystemRoot[253];
+    if (*NtPathStuff && (NtCurrentPeb()->TracingFlags & LibLoaderTracingEnabled) != 0)
+    {
+        if (RtlGetCurrentServiceSessionId())
+            NtPathStuff2 = (PCHAR)&NtCurrentPeb()->SharedData->NtSystemRoot[253] + 1;
+
+        // 0x20 is SPACE char.
+        if ((*NtPathStuff2 & ' ') != 0)
+            WID_HIDDEN( LdrpLogEtwEvent(0x1486, -1, 0xFFu, 0xFFu); )
+    }
+    if (!*UseWOW64 && (LoadContext->Flags & 0x100) == 0 && (Status = LdrpCodeAuthzCheckDllAllowed(FileNameBuffer, FileHandle), NT_SUCCESS((LONG)(Status + 0x80000000))) && Status != STATUS_NOT_FOUND || (Status = fLdrpMapDllWithSectionHandle(LoadContext, SectionHandle), !UnknownPtr) || !NT_SUCCESS(Status))
+    {
+        NtClose(SectionHandle);
+        NtClose(FileHandle);
+        return Status;
+    }
+    LoadContext->FileHandle = FileHandle;
+    LoadContext->SectionHandle = SectionHandle;
+    return Status;
+}
+```
+Opens the file with NtOpenFile, creates a section using NtCreateSection to be able to map the dll, continues with calling LdrpMapDllWithSectionHandle.
