@@ -26,6 +26,13 @@ int main()
     LOADLIBRARY LoadDll(TEXT("PATH_TO_DLL.dll"));
 }
 ```
+The constructor takes in 3 arguments, which the last 2 are set by default.
+#### PATH
+Dll path, can be absolute or relative.
+#### FLAGS
+Same flags as in LoadLibraryExW, you can check the possible values in [here](https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-loadlibraryexw). Set to 0 by default.
+#### LOAD TYPE
+If set to LOADTYPE::HIDDEN, Windows will not be informed about the loading of the dll. Set to LOADTYPE::DEFAULT by default.
 
 <hr>
 
