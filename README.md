@@ -11,8 +11,8 @@ The purpose of these series are **only** to understand Windows better, there is 
 ### Functions
 All the function implementations given are my own, they are not guaranteed to represent the exact functionality.
 
-### Levels
-The depth level (it's what I say) of the functions, as the level get higher, the functions get less documented and harder to understand.
+### Discord
+If you have further questions you can come to my discord server clicking the above icon.
 
 # Usage
 Pretty easy, you first include "WID.h" into your source file. Then you create a LOADLIBRARY instance with a path given, and that's it. Now you can almost see the entire loading process!
