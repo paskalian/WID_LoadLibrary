@@ -8,6 +8,9 @@
 The purpose of these series are **only** to understand Windows better, there is a lot to discover.
 
 # Information <a href="https://discord.gg/9qe38utdBJ" target="blank"><img align="center" src="https://raw.githubusercontent.com/rahuldkjain/github-profile-readme-generator/master/src/images/icons/Social/discord.svg" alt="9qe38utdBJ" height="40" width="40"></a>
+### Compatibility
+The project is designed specifically for x64 architecture, not tested in x86 architecture.
+
 ### Functions
 All the function implementations given are my own, they are not guaranteed to represent the exact functionality.
 
