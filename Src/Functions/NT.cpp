@@ -587,7 +587,7 @@ BOOL __fastcall LdrpIsExecutableRelocatedImage(PIMAGE_DOS_HEADER DllBase)
     MEMORY_IMAGE_INFORMATION MemoryInformation; // [rsp+30h] [rbp-28h] BYREF
     PIMAGE_NT_HEADERS OutHeaders; // [rsp+68h] [rbp+10h] BYREF
 
-    return NT_SUCCESS(RtlImageNtHeaderEx(3u, DllBase, 0i64, &OutHeaders) >= 0) && (PIMAGE_DOS_HEADER)OutHeaders->OptionalHeader.ImageBase == DllBase
+    return NT_SUCCESS(RtlImageNtHeaderEx(3u, DllBase, 0i64, &OutHeaders)) && (PIMAGE_DOS_HEADER)OutHeaders->OptionalHeader.ImageBase == DllBase
         && NT_SUCCESS(ZwQueryVirtualMemory((HANDLE)-1, DllBase, MemoryImageInformation, &MemoryInformation, 0x18, 0))
         && MemoryInformation.ImageBase == DllBase
         && (MemoryInformation.ImageFlags & 2) == 0

@@ -222,7 +222,7 @@ typedef NTSTATUS(__fastcall* tLdrpDereferenceModule)(LDR_DATA_TABLE_ENTRY* DllEn
 extern	tLdrpDereferenceModule LdrpDereferenceModule;
 
 #define LDRP_LOG_DLLSTATE_PATTERN "\x48\x89\x5C\x24\x08\x48\x89\x74\x24\x10\x57\x48\x83\xEC\x30\x65\x48\x8B\x04\x25\x60\x00\x00\x00\x41"
-typedef NTSTATUS(__fastcall* tLdrpLogDllState)(ULONG, PUNICODE_STRING, ULONG);
+typedef NTSTATUS(__fastcall* tLdrpLogDllState)(UINT_PTR, PUNICODE_STRING, ULONG);
 extern	tLdrpLogDllState LdrpLogDllState;
 
 #define LDRP_PREPROCESS_DLLNAME_PATTERN "\x4C\x8B\xDC\x49\x89\x5B\x08\x49\x89\x6B\x10\x49\x89\x73\x18\x57\x41\x54\x41\x55\x41\x56\x41\x57\x48\x83\xEC\x40"
