@@ -2545,20 +2545,9 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpPrepareImportAddressTableForSnap(LDRP_LOAD
 {
 	NTSTATUS Status;
 	
-	PIMAGE_IMPORT_DESCRIPTOR pImageImportDescriptor;
-	NTSTATUS Status_2;
-	PIMAGE_IMPORT_DESCRIPTOR pNextSectionMaybe;
-	PIMAGE_IMPORT_DESCRIPTOR pNextImageImportDescriptor;
-	unsigned int ImportDirectoryVA;
-	unsigned int SectionIdx;
-	DWORD SectionVA;
-	UINT_PTR SectionFA;
-	UINT_PTR ImageImportDescriptorLen;
-
-	//DllEntry = (LDR_DATA_TABLE_ENTRY*)LoadContext->WorkQueueListEntry.Flink;
 	LDR_DATA_TABLE_ENTRY* DllEntry = CONTAINING_RECORD(LoadContext->WorkQueueListEntry.Flink, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
 
-	PIMAGE_IMPORT_DESCRIPTOR ImageImportDescriptor;
+	PIMAGE_IMPORT_DESCRIPTOR ImageImportDescriptor = nullptr;
 	UINT_PTR* pImageImportDescriptorLen = (UINT_PTR*)&LoadContext->ImageImportDescriptorLen;
 	Status = RtlpImageDirectoryEntryToDataEx(DllEntry->DllBase, 1u, IMAGE_DIRECTORY_ENTRY_IAT, (UINT_PTR*)&LoadContext->ImageImportDescriptorLen, &ImageImportDescriptor);
 	if (!NT_SUCCESS(Status))
@@ -2594,13 +2583,14 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpPrepareImportAddressTableForSnap(LDRP_LOAD
 	{
 		if (!LoadContext->pImageImportDescriptor)
 		{
-			ImportDirectoryVA = OutHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
+			ULONG ImportDirectoryVA = OutHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
 			PIMAGE_SECTION_HEADER FirstSection = (PIMAGE_SECTION_HEADER)((char*)&OutHeaders->OptionalHeader + OutHeaders->FileHeader.SizeOfOptionalHeader);
 			if (ImportDirectoryVA)
 			{
-				SectionIdx = 0;
+				ULONG SectionIdx = 0;
 				if (OutHeaders->FileHeader.NumberOfSections)
 				{
+					ULONG SectionVA = 0;
 					while (TRUE)
 					{
 						SectionVA = FirstSection->VirtualAddress;
@@ -2613,8 +2603,9 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpPrepareImportAddressTableForSnap(LDRP_LOAD
 						if (SectionIdx >= OutHeaders->FileHeader.NumberOfSections)
 							break;
 					}
+
 					LoadContext->pImageImportDescriptor = (PIMAGE_IMPORT_DESCRIPTOR)((char*)DllEntry->DllBase + SectionVA);
-					SectionFA = FirstSection->Misc.PhysicalAddress;
+					ULONG SectionFA = FirstSection->Misc.PhysicalAddress;
 					*pImageImportDescriptorLen = SectionFA;
 					if (!SectionFA)
 						*pImageImportDescriptorLen = FirstSection->SizeOfRawData;
@@ -2623,17 +2614,17 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpPrepareImportAddressTableForSnap(LDRP_LOAD
 		}
 	} while (FALSE);
 
-	pImageImportDescriptor = LoadContext->pImageImportDescriptor;
+	PIMAGE_IMPORT_DESCRIPTOR pImageImportDescriptor = LoadContext->pImageImportDescriptor;
 	if (pImageImportDescriptor && *pImageImportDescriptorLen)
 	{
-		ImageImportDescriptorLen = *pImageImportDescriptorLen;
+		UINT_PTR ImageImportDescriptorLen = *pImageImportDescriptorLen;
 
-		Status_2 = ZwProtectVirtualMemory((HANDLE)-1, (PVOID*)&pImageImportDescriptor, (PULONG)&ImageImportDescriptorLen, PAGE_READWRITE, (PULONG)&LoadContext->GuardFlags);
+		NTSTATUS Status_2 = ZwProtectVirtualMemory((HANDLE)-1, (PVOID*)&pImageImportDescriptor, (PULONG)&ImageImportDescriptorLen, PAGE_READWRITE, (PULONG)&LoadContext->GuardFlags);
 		if (!NT_SUCCESS(Status_2))
 			return Status_2;
 
-		pNextSectionMaybe = pImageImportDescriptor;
-		pNextImageImportDescriptor = (IMAGE_IMPORT_DESCRIPTOR*)((char*)pImageImportDescriptor + ImageImportDescriptorLen);
+		PIMAGE_IMPORT_DESCRIPTOR pNextSectionMaybe = pImageImportDescriptor;
+		PIMAGE_IMPORT_DESCRIPTOR pNextImageImportDescriptor = (IMAGE_IMPORT_DESCRIPTOR*)((char*)pImageImportDescriptor + ImageImportDescriptorLen);
 		do
 		{
 			pNextSectionMaybe = (PIMAGE_IMPORT_DESCRIPTOR)((char*)pNextSectionMaybe + 0x1000);
