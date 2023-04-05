@@ -11,8 +11,8 @@ The purpose of these series are **only** to understand Windows better, there is 
 ### Functions
 All the function implementations given are my own, they are not guaranteed to represent the exact functionality.
 
-### Levels
-The depth level (it's what I say) of the functions, as the level get higher, the functions get less documented and harder to understand.
+### Discord
+If you have further questions you can come to my discord server clicking the above icon.
 
 # Usage
 Pretty easy, you first include "WID.h" into your source file. Then you create a LOADLIBRARY instance with a path given, and that's it. Now you can almost see the entire loading process!
@@ -1185,4 +1185,165 @@ NTSTATUS __fastcall LOADLIBRARY::fLdrpMapAndSnapDependency(PLDRP_LOAD_CONTEXT Lo
     return *LoadContext->pStatus;
 }
 ```
-Loads the imports of the dll getting loaded, sets the state, continues on by calling LdrpSnapModule.
+Prepares the Import Address Table (IAT) by calling LdrpPrepareImportAddressTableForSnap, loads the imports of the dll getting loaded, sets the state, continues on by calling LdrpSnapModule which I am quite frank about the actual functionality, but I've seen it handling exports.
+<br>
+## LdrpPrepareImportAddressTableForSnap
+```cpp
+NTSTATUS __fastcall LOADLIBRARY::fLdrpPrepareImportAddressTableForSnap(LDRP_LOAD_CONTEXT* LoadContext)
+{
+    NTSTATUS Status;
+    
+    LDR_DATA_TABLE_ENTRY* DllEntry = CONTAINING_RECORD(LoadContext->WorkQueueListEntry.Flink, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+
+    PIMAGE_IMPORT_DESCRIPTOR ImageImportDescriptor = nullptr;
+    UINT_PTR* pImageImportDescriptorLen = (UINT_PTR*)&LoadContext->ImageImportDescriptorLen;
+    Status = RtlpImageDirectoryEntryToDataEx(DllEntry->DllBase, 1u, IMAGE_DIRECTORY_ENTRY_IAT, (UINT_PTR*)&LoadContext->ImageImportDescriptorLen, &ImageImportDescriptor);
+    if (!NT_SUCCESS(Status))
+        ImageImportDescriptor = nullptr;
+
+    BOOLEAN IsFile = (LoadContext->Flags & SEC_FILE);
+    LoadContext->pImageImportDescriptor = ImageImportDescriptor;
+    if (IsFile)
+        return STATUS_SUCCESS;
+
+    BOOLEAN JumpOver = FALSE;
+
+    PIMAGE_NT_HEADERS OutHeaders = nullptr;
+    RtlImageNtHeaderEx(3, DllEntry->DllBase, 0, &OutHeaders);
+    PIMAGE_LOAD_CONFIG_DIRECTORY ImageConfigDirectory = LdrImageDirectoryEntryToLoadConfig(DllEntry->DllBase);
+    if (!ImageConfigDirectory || ImageConfigDirectory->Size < 0x94)
+        JumpOver = TRUE;
+
+    if (!JumpOver)
+    {
+        if ((OutHeaders->OptionalHeader.DllCharacteristics & IMAGE_DLLCHARACTERISTICS_GUARD_CF) != 0 && (ImageConfigDirectory->GuardFlags & IMAGE_GUARD_CF_INSTRUMENTED) != 0)
+        {
+            UINT_PTR* GuardCFCheckFunctionPointer = (UINT_PTR*)ImageConfigDirectory->GuardCFCheckFunctionPointer;
+            LoadContext->UnknownFunc = (__int64)GuardCFCheckFunctionPointer;
+            if (GuardCFCheckFunctionPointer)
+            {
+                LoadContext->DllNameLenCompare = *GuardCFCheckFunctionPointer;
+            }
+        }
+    }
+
+    do
+    {
+        if (!LoadContext->pImageImportDescriptor)
+        {
+            ULONG ImportDirectoryVA = OutHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
+            PIMAGE_SECTION_HEADER FirstSection = (PIMAGE_SECTION_HEADER)((char*)&OutHeaders->OptionalHeader + OutHeaders->FileHeader.SizeOfOptionalHeader);
+            if (ImportDirectoryVA)
+            {
+                ULONG SectionIdx = 0;
+                if (OutHeaders->FileHeader.NumberOfSections)
+                {
+                    ULONG SectionVA = 0;
+                    while (TRUE)
+                    {
+                        SectionVA = FirstSection->VirtualAddress;
+                        if (ImportDirectoryVA >= SectionVA && ImportDirectoryVA < SectionVA + FirstSection->SizeOfRawData)
+                            break;
+
+                        ++SectionIdx;
+                        ++FirstSection;
+
+                        if (SectionIdx >= OutHeaders->FileHeader.NumberOfSections)
+                            break;
+                    }
+
+                    LoadContext->pImageImportDescriptor = (PIMAGE_IMPORT_DESCRIPTOR)((char*)DllEntry->DllBase + SectionVA);
+                    ULONG SectionFA = FirstSection->Misc.PhysicalAddress;
+                    *pImageImportDescriptorLen = SectionFA;
+                    if (!SectionFA)
+                        *pImageImportDescriptorLen = FirstSection->SizeOfRawData;
+                }
+            }
+        }
+    } while (FALSE);
+
+    PIMAGE_IMPORT_DESCRIPTOR pImageImportDescriptor = LoadContext->pImageImportDescriptor;
+    if (pImageImportDescriptor && *pImageImportDescriptorLen)
+    {
+        UINT_PTR ImageImportDescriptorLen = *pImageImportDescriptorLen;
+
+        NTSTATUS Status_2 = ZwProtectVirtualMemory((HANDLE)-1, (PVOID*)&pImageImportDescriptor, (PULONG)&ImageImportDescriptorLen, PAGE_READWRITE, (PULONG)&LoadContext->GuardFlags);
+        if (!NT_SUCCESS(Status_2))
+            return Status_2;
+
+        PIMAGE_IMPORT_DESCRIPTOR pNextSectionMaybe = pImageImportDescriptor;
+        PIMAGE_IMPORT_DESCRIPTOR pNextImageImportDescriptor = (IMAGE_IMPORT_DESCRIPTOR*)((char*)pImageImportDescriptor + ImageImportDescriptorLen);
+        do
+        {
+            pNextSectionMaybe = (PIMAGE_IMPORT_DESCRIPTOR)((char*)pNextSectionMaybe + 0x1000);
+        } while (pNextSectionMaybe < pNextImageImportDescriptor);
+    }
+    return STATUS_SUCCESS;
+}
+```
+As the function name, prepares the Import Address Table (IAT) for our loaded dll. After this function we go back to LdrpLoadDllInternal because the mapping process is complete. Proceeding with calling LdrpPrepareModuleForExecution.
+<br>
+## LdrpPrepareModuleForExecution
+```cpp
+NTSTATUS __fastcall LOADLIBRARY::fLdrpPrepareModuleForExecution(PLDR_DATA_TABLE_ENTRY LdrEntry, NTSTATUS* pStatus)
+{
+    NTSTATUS Status;
+
+    Status = STATUS_SUCCESS;
+    if (*qword_17E238 == NtCurrentTeb()->ClientId.UniqueThread)
+        return Status;
+
+    BOOLEAN Skip = FALSE;
+
+    LDR_DDAG_NODE* DdagNode = LdrEntry->DdagNode;
+    switch (DdagNode->State)
+    {
+    case LdrModulesSnapped:
+        LdrpCondenseGraph(DdagNode);
+    case LdrModulesCondensed:
+    {
+        // This is where we'll start from normally.
+        if ((LdrEntry->FlagGroup[0] & ProcessStaticImport) == 0)
+        {
+            UINT_PTR SubProcessTag = (UINT_PTR)NtCurrentTeb()->SubProcessTag;
+            LdrpAddNodeServiceTag(DdagNode, SubProcessTag);
+        }
+
+        Status = LdrpNotifyLoadOfGraph(DdagNode);
+        if (NT_SUCCESS(Status))
+        {
+            Status = LdrpDynamicShimModule(DdagNode);
+            if (!NT_SUCCESS(Status))
+            {
+                WID_HIDDEN( LdrpLogInternal("minkernel\\ntdll\\ldrsnap.c", 0x9F3, "LdrpPrepareModuleForExecution", 1u, "Failed to load for appcompat reasons\n"); )
+                return Status;
+            }
+            Skip = TRUE;
+        }
+
+        if (!Skip)
+            return Status;
+    }
+    case LdrModulesReadyToInit:
+        LDRP_LOAD_CONTEXT* LoadContext = (LDRP_LOAD_CONTEXT*)LdrEntry->LoadContext;
+        if (LoadContext && (LoadContext->Flags & 1) == 0)
+        {
+            LdrpAcquireLoaderLock();
+
+            UINT64 Unknown = 0;
+            Status = fLdrpInitializeGraphRecurse(DdagNode, pStatus, (char*)&Unknown);
+
+            ULONG64 Unused = 0;
+            LdrpReleaseLoaderLock(Unused, 2, Status);
+        }
+        return Status;
+    }
+
+    // States end at 9.
+    if (DdagNode->State > LdrModulesReadyToRun)
+        return STATUS_INTERNAL_ERROR;
+
+    return Status;
+}
+```
+Adds a service tag to our module by LdrModulesCondensed, continues by LdrModulesReadyToInit acquiring a Loader lock first then calling LdrpInitializeGraphRecurse.
