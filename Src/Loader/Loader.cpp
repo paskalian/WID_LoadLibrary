@@ -2958,9 +2958,8 @@ BOOLEAN __fastcall LOADLIBRARY::fLdrpCallInitRoutine(BOOL(__fastcall* DllMain)(H
 
 NTSTATUS __fastcall LOADLIBRARY::fBasepLoadLibraryAsDataFileInternal(PUNICODE_STRING DllName, PWSTR Path, PWSTR Unknown, DWORD dwFlags, HMODULE* pBaseOfLoadedModule)
 {
-	// TO DO.
-	
-	return STATUS_SUCCESS;
+	// I have no control over datafile loads. It's only included to not break-up functionality.
+	return BasepLoadLibraryAsDataFileInternal(DllName, Path, Unknown, dwFlags, pBaseOfLoadedModule);
 }
 
 NTSTATUS LOADLIBRARY::Unload()

@@ -31,6 +31,10 @@ NTSTATUS WID::Init()
 		(Basep8BitStringToDynamicUnicodeString	= (tBasep8BitStringToDynamicUnicodeString)GetProcAddress(Kernel32Module, "Basep8BitStringToDynamicUnicodeString")	,assert(Basep8BitStringToDynamicUnicodeString));
 		(BaseSetLastNTError						= (tBaseSetLastNTError)GetProcAddress(Kernel32Module, "BaseSetLastNTError")											,assert(BaseSetLastNTError));
 
+		// KERNELBASE
+		// Signatured
+		(BasepLoadLibraryAsDataFileInternal		= (tBasepLoadLibraryAsDataFileInternal)	Helper::SigScan((PCHAR)KernelBaseModule, KernelBaseModuleInfo.SizeOfImage, BASEP_LLASDATAFILE_INTERNAL_PATTERN, ARRAYSIZE(BASEP_LLASDATAFILE_INTERNAL_PATTERN) - 1), assert(BasepLoadLibraryAsDataFileInternal));
+
 		// NTDLL
 		// Variables
 		(LdrpPolicyBits							= (DWORD*)								((PCHAR)NtdllModule + 0x181694)								,assert(LdrpPolicyBits));
